@@ -1,17 +1,43 @@
-use chan_signal::{notify, Signal};
-use muxide::pty::PTY;
-use muxide::geometry::Size;
-use muxide::vte_handler::VTEHandler;
-use std::fs::File;
-use std::io::{Read, Result, Write};
+use crossterm::{execute, terminal};
+use muxide::{Display, InputManager};
+use std::io::{stdout, Write};
 use std::thread;
 use std::time::Duration;
-use termion::get_tty;
-use termion::raw::IntoRawMode;
-use vte::Parser;
-use muxide::terminal_screen::TerminalScreen;
+
+const RENDER_LIMIT: f32 = 1f32 / 24f32;
 
 fn main() {
+    let mut manager = InputManager::new();
+
+    if !manager.start() || !manager.is_running() {
+        panic!("Fail?");
+    }
+
+    execute!(stdout(), terminal::EnterAlternateScreen);
+
+    //let mut display = Display::new("/usr/bin/vim").init().unwrap();
+    let mut display = Display::new("/usr/local/bin/fish").init().unwrap();
+
+    display.open_new_panel().unwrap();
+    display.render();
+
+    while !display.quit() {
+        let content = manager.take_buffer().unwrap();
+
+        for vc in content {
+            display.receive_input(vc).unwrap();
+        }
+
+        if display.pre_render().unwrap() {
+            display.render();
+        }
+
+        thread::sleep(Duration::from_secs_f32(RENDER_LIMIT));
+    }
+
+    execute!(stdout(), terminal::LeaveAlternateScreen);
+}
+/*
     let signal = notify(&[Signal::WINCH]);
 
     let mut tty_output = get_tty().unwrap().into_raw_mode().unwrap();
@@ -22,8 +48,7 @@ fn main() {
 
     let mut pty_output = pty_resize.try_clone().unwrap();
     let mut pty_input = pty_output.try_clone().unwrap();
-    let mut handler = TerminalScreen::new(Size::new(20, 20));
-    let mut state_machine = Parser::new();
+    let mut state_machine = Parser::new(20, 80, 40);
 
     let handle = thread::spawn(move || {
         loop {
@@ -32,11 +57,7 @@ fn main() {
             let count = pty_input.read(&mut packet).unwrap();
 
             let read = &packet[..count];
-
-            for b in read {
-                //println!("{}", (*b));
-                state_machine.advance(&mut handler, *b);
-            }
+            state_machine.process(read);
 
             tty_output.write_all(&read).unwrap();
             tty_output.flush().unwrap();
@@ -77,3 +98,4 @@ fn pipe(input: &mut File, output: &mut File) -> Result<()> {
 
     Ok(())
 }
+*/

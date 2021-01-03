@@ -1,6 +1,7 @@
 use nix::pty::Winsize;
 use num_traits::{PrimInt, Unsigned, Zero};
 use std::fmt::Display;
+use std::ops::Sub;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Size {
@@ -30,7 +31,7 @@ impl Size {
     }
 
     pub fn get_max(&self) -> Point<u16> {
-        return Point::new_origin(self.cols, self.rows, (1,1));
+        return Point::new_origin(self.cols, self.rows, (1, 1));
     }
 
     pub fn get_cols(&self) -> u16 {
@@ -39,6 +40,19 @@ impl Size {
 
     pub fn get_rows(&self) -> u16 {
         return self.rows;
+    }
+
+    pub fn divide_by_const(&mut self, constant: u16) {
+        self.rows /= constant;
+        self.cols /= constant;
+    }
+}
+
+impl Sub for Size {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        return Self::new(self.rows - rhs.rows, self.cols - rhs.cols);
     }
 }
 
@@ -52,11 +66,11 @@ impl<T: PrimInt + Unsigned + Zero> Point<T> {
         };
     }
 
-    /// Creates a new point with a different origin from (0, 0)
+    /// Creates a new point and shifts by (x, y)
     pub fn new_origin(column: T, row: T, origin: (T, T)) -> Self {
         return Self {
-            x: column - origin.0,
-            y: row - origin.1,
+            x: column + origin.0,
+            y: row + origin.1,
             origin,
         };
     }
@@ -67,21 +81,11 @@ impl<T: PrimInt + Unsigned + Zero> Point<T> {
 
     /// Get, the x component of this point
     pub fn column(&self) -> T {
-        return self.x + self.origin.0;
-    }
-
-    /// Get the x component of this point as a distance from the origin, i.e. starting from 0
-    pub fn column_index(&self) -> T {
         return self.x;
     }
 
     /// Get, the y component of this point
     pub fn row(&self) -> T {
-        return self.y + self.origin.1;
-    }
-
-    /// Get the y component of this point as a distance from the origin, i.e. starting from 0
-    pub fn row_index(&self) -> T {
         return self.y;
     }
 }

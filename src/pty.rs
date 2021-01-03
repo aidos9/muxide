@@ -1,11 +1,14 @@
+use crate::error::{Error, ErrorType};
 use crate::geometry::Size;
+use mio::unix::SourceFd;
+use mio::{Interest, Registry, Token};
 use nix::fcntl::{self, FcntlArg, OFlag};
 use nix::unistd;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
@@ -20,10 +23,10 @@ pub struct PTY {
 }
 
 impl PTY {
-    pub fn new(program: &str, size: &Size) -> Self {
-        let (master, slave) = Self::open_pty(size).unwrap();
+    pub fn new(program: &str, size: &Size) -> Result<Self, Error> {
+        let (master, slave) = Self::open_pty(size)?;
 
-        let mut handle = unsafe {
+        let mut pty_command_handle = match unsafe {
             Command::new(program)
                 .stdin(
                     Stdio::from_raw_fd(slave), // Unsafe
@@ -36,21 +39,28 @@ impl PTY {
                 )
                 .pre_exec(Self::in_between) // Unsafe
                 .spawn()
-                .unwrap()
+        } {
+            Ok(h) => h,
+            Err(e) => {
+                return Err(ErrorType::PTYSpawnError {
+                    description: format!("{}", e),
+                }
+                .into_error());
+            }
         };
 
         let (tx, rx) = mpsc::channel();
         let open = Arc::new(AtomicBool::new(true));
         let cp = open.clone();
 
-        let handle = thread::spawn(move || {
+        let manager_handle = thread::spawn(move || {
             loop {
                 match rx.try_recv() {
                     Ok(_) | Err(mpsc::TryRecvError::Disconnected) => {
-                        let _ = handle.kill();
+                        let _ = pty_command_handle.kill();
                         break;
                     }
-                    Err(mpsc::TryRecvError::Empty) => match handle.try_wait() {
+                    Err(mpsc::TryRecvError::Empty) => match pty_command_handle.try_wait() {
                         Ok(Some(_)) => {
                             break;
                         }
@@ -67,42 +77,56 @@ impl PTY {
             fd: master,
             file: unsafe { File::from_raw_fd(master) },
             open,
-            handle: Some(handle),
+            handle: Some(manager_handle),
             tx,
         };
 
-        pty.resize(size).unwrap();
+        pty.resize(size)?;
 
-        return pty;
+        return Ok(pty);
     }
 
     pub fn is_running(&self) -> bool {
         return self.open.load(Ordering::Relaxed);
     }
 
-    pub fn kill(mut self) {
-        if self.is_running() {
-            self.tx.send(());
-            self.handle.take().unwrap().join().unwrap();
-        }
-    }
+    pub fn resize(&self, size: &Size) -> Result<(), Error> {
+        let res = unsafe { libc::ioctl(self.fd, libc::TIOCSWINSZ, &size.to_winsize()) };
 
-    pub fn resize(&self, size: &Size) -> Result<(), ()> {
-        unsafe {
-            if libc::ioctl(self.fd, libc::TIOCSWINSZ, &size.to_winsize()) != 0 {
-                return Err(());
+        if res != 0 {
+            return Err(ErrorType::IOCTLError {
+                code: res,
+                outcome: "Failed to resize the PTY.".to_string(),
             }
+            .into_error());
         }
 
         return Ok(());
     }
 
-    fn open_pty(size: &Size) -> Result<(RawFd, RawFd), ()> {
-        let res = nix::pty::openpty(Some(&size.to_winsize()), None).unwrap();
+    fn open_pty(size: &Size) -> Result<(RawFd, RawFd), Error> {
+        let res = nix::pty::openpty(Some(&size.to_winsize()), None).map_err(|e| {
+            ErrorType::OpenPTYError {
+                reason: format!("{}", e),
+            }
+            .into_error()
+        })?;
+
         let (master, slave) = (res.master, res.slave);
 
-        let res = OFlag::from_bits(fcntl::fcntl(master, FcntlArg::F_GETFL).unwrap()).unwrap();
-        fcntl::fcntl(master, FcntlArg::F_SETFL(res)).unwrap();
+        let res = OFlag::from_bits(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| {
+            ErrorType::FCNTLError {
+                reason: format!("{}", e),
+            }
+            .into_error()
+        })?)
+        .unwrap();
+        fcntl::fcntl(master, FcntlArg::F_SETFL(res)).map_err(|e| {
+            ErrorType::FCNTLError {
+                reason: format!("{}", e),
+            }
+            .into_error()
+        })?;
 
         return Ok((master, slave));
     }
@@ -125,11 +149,20 @@ impl PTY {
 
 impl Drop for PTY {
     fn drop(&mut self) {
+        // We try to gracefully close the process ignoring any errors in the process
         if self.is_running() {
-            let _ = self.tx.send(());
-            let _ = self.handle.take().unwrap().join();
+            // If we successfully send the stop message then join the handle
+            if let Ok(_) = self.tx.send(()) {
+                match self.handle.take() {
+                    Some(handle) => {
+                        let _ = handle.join();
+                    }
+                    None => (),
+                }
+            }
         }
 
+        // Try to close, may fail if the file descriptor was already closed but we ignore that error.
         let _ = unistd::close(self.fd);
     }
 }
@@ -164,13 +197,37 @@ impl std::ops::DerefMut for PTY {
     }
 }
 
+impl mio::event::Source for PTY {
+    fn register(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        return SourceFd(&self.fd).register(registry, token, interests);
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        return SourceFd(&self.fd).reregister(registry, token, interests);
+    }
+
+    fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
+        return SourceFd(&self.fd).deregister(registry);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_pty_read_some() {
-        let mut pty = PTY::new("/usr/local/bin/fish", &Size::new(300, 300));
+        let mut pty = PTY::new("/usr/local/bin/fish", &Size::new(300, 300)).unwrap();
 
         let mut bytes = [0u8; 4096];
         let count = pty.read(&mut bytes).unwrap();

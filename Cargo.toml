@@ -7,9 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vte = "0.9"
+vt100 = "0.8.1"
+crossterm = "0.19"
+termion = "1.5"
+mio = "0.7"
+num-traits = "0.2"
 nix = "0.19"
 libc = "0.2"
 chan-signal = "0.3"
-termion = "1.5"
-num-traits = "0.2"
