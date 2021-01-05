@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use termion::event::Key;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Config {
     key_map: KeyMap,
+    thread_delay_period: Option<Duration>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -34,10 +36,19 @@ pub enum Command {
 }
 
 impl Config {
+    const DEFAULT_THREAD_DELAY_TIME: Duration = Duration::from_micros(500);
+
     pub fn new() -> Self {
         return Self {
             key_map: KeyMap::default(),
+            thread_delay_period: None,
         };
+    }
+
+    pub fn get_thread_time(&self) -> Duration {
+        return self
+            .thread_delay_period
+            .unwrap_or(Self::DEFAULT_THREAD_DELAY_TIME);
     }
 
     pub fn key_map(&self) -> &KeyMap {

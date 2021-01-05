@@ -1,6 +1,6 @@
 use nix::pty::Winsize;
 use num_traits::{PrimInt, Unsigned, Zero};
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::ops::Sub;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -42,8 +42,7 @@ impl Size {
         return self.rows;
     }
 
-    pub fn divide_by_const(&mut self, constant: u16) {
-        self.rows /= constant;
+    pub fn divide_width_by_const(&mut self, constant: u16) {
         self.cols /= constant;
     }
 }
@@ -92,6 +91,12 @@ impl<T: PrimInt + Unsigned + Zero> Point<T> {
 
 impl<T: PrimInt + Unsigned + Zero + Display> Display for Point<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "({}, {})", self.column(), self.row());
+        return write!(f, "(x: {}, y: {})", self.column(), self.row());
+    }
+}
+
+impl std::fmt::Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "{{width: {}, height: {}}}", self.cols, self.rows);
     }
 }

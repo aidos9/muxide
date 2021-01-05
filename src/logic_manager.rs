@@ -7,16 +7,16 @@ pub struct LogicManager {
     config: Config,
     cmd_buffer: Vec<char>,
     redraw: bool,
+    command_mode: bool,
 }
 
 impl LogicManager {
-    pub const ENTER_COMMAND_BYTE: u8 = 0x10; // ctrl+p
-
     pub fn new() -> Self {
         return Self {
             config: Config::new(),
             cmd_buffer: Vec::new(),
             redraw: false,
+            command_mode: true,
         };
     }
 
@@ -54,11 +54,25 @@ impl LogicManager {
 
                 match self.handle_key(&key) {
                     Some(c) => Some(c),
-                    None => self.handle_cmd_key(&key),
+                    None => {
+                        if self.command_mode {
+                            self.handle_cmd_key(&key)
+                        } else {
+                            None
+                        }
+                    }
                 }
             }
             _ => None,
         };
+    }
+
+    pub fn set_command_mode(&mut self, cmd_mode: bool) {
+        self.command_mode = cmd_mode;
+    }
+
+    pub fn get_command_mode(&self) -> bool {
+        return self.command_mode;
     }
 
     fn key_to_char(key: &Key) -> Option<Vec<char>> {

@@ -1,12 +1,13 @@
 use crossterm::{execute, terminal};
-use muxide::{Display, InputManager};
+use muxide::{Config, Display, InputManager};
 use std::io::{stdout, Write};
 use std::thread;
 use std::time::Duration;
 
-const RENDER_LIMIT: f32 = 1f32 / 24f32;
+const RENDER_LIMIT: u64 = 100;
 
 fn main() {
+    let config = Config::new();
     let mut manager = InputManager::new();
 
     if !manager.start() || !manager.is_running() {
@@ -16,13 +17,15 @@ fn main() {
     execute!(stdout(), terminal::EnterAlternateScreen);
 
     //let mut display = Display::new("/usr/bin/vim").init().unwrap();
-    let mut display = Display::new("/usr/local/bin/fish").init().unwrap();
+    let mut display = Display::new("/usr/local/bin/fish", config.clone())
+        .init()
+        .unwrap();
 
     display.open_new_panel().unwrap();
     display.render();
 
     while !display.quit() {
-        let content = manager.take_buffer().unwrap();
+        let content = manager.take_buffer();
 
         for vc in content {
             display.receive_input(vc).unwrap();
@@ -32,7 +35,7 @@ fn main() {
             display.render();
         }
 
-        thread::sleep(Duration::from_secs_f32(RENDER_LIMIT));
+        thread::sleep(config.get_thread_time());
     }
 
     execute!(stdout(), terminal::LeaveAlternateScreen);

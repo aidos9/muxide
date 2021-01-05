@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 pub struct PTY {
     fd: RawFd,
@@ -23,7 +24,7 @@ pub struct PTY {
 }
 
 impl PTY {
-    pub fn new(program: &str, size: &Size) -> Result<Self, Error> {
+    pub fn new(program: &str, size: &Size, thread_sleep_time: Duration) -> Result<Self, Error> {
         let (master, slave) = Self::open_pty(size)?;
 
         let mut pty_command_handle = match unsafe {
@@ -68,6 +69,8 @@ impl PTY {
                         Err(e) => panic!(e),
                     },
                 }
+
+                thread::sleep(thread_sleep_time);
             }
 
             cp.store(false, Ordering::Relaxed);

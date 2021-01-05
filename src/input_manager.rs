@@ -1,4 +1,3 @@
-use crate::sender_id::SenderID;
 use crate::{Error, ErrorType};
 use mio::{Events, Poll};
 use std::fs::File;
@@ -27,7 +26,7 @@ impl InputManager {
         };
     }
 
-    pub fn start(&mut self, tx: Sender<SenderID>) -> bool {
+    pub fn start(&mut self) -> bool {
         if self.is_running() {
             return false;
         }
@@ -46,7 +45,6 @@ impl InputManager {
                 match storage.lock() {
                     Ok(mut storage) => {
                         storage.push(content);
-                        tx.send(SenderID::User);
                     }
                     Err(_) => break,
                 }

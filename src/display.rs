@@ -3,7 +3,7 @@ use crate::error::{Error, ErrorType};
 use crate::geometry::{Point, Size};
 use crate::logic_manager::LogicManager;
 use crate::pty::PTY;
-use crate::sender_id::SenderID;
+use crate::Config;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
 use mio::{Events, Interest, Poll, Token};
@@ -57,6 +57,7 @@ pub struct Display {
     processor: LogicManager,
     continue_execution: bool,
     cursor_position_prompt: u16,
+    config: Config,
 }
 
 struct Panel {
@@ -96,7 +97,7 @@ impl Display {
     const CORNER_BORDER_CHARACTER: char = '+';
     const PROMPT_STRING: &'static str = "cmd > ";
 
-    pub fn new(init_command: &str, panel_sender: Sender<SenderID>) -> Self {
+    pub fn new(init_command: &str, config: Config) -> Self {
         return Self {
             init_command: init_command.to_string(),
             layout: Layout::Empty,
@@ -108,7 +109,7 @@ impl Display {
             processor: LogicManager::new(),
             continue_execution: true,
             cursor_position_prompt: 0,
-            sender: panel_sender,
+            config,
         };
     }
 
@@ -141,13 +142,13 @@ impl Display {
                 return Ok(());
             }
             Some(Command::EnterInputCommand) => {
-                self.selected_panel = None;
+                self.set_selected_panel(None);
                 self.changed_state = true;
                 return Ok(());
             }
             Some(Command::StopInputCommand) => {
                 if self.panels.len() > 0 {
-                    self.selected_panel = Some(self.panels[0].clone());
+                    self.set_selected_panel(Some(self.panels[0].clone()));
                     self.changed_state = true;
                     return Ok(());
                 }
@@ -182,19 +183,25 @@ impl Display {
                 let size = Self::get_terminal_size()?;
                 let panel = self.init_panel(size - Size::new(4, 2), (1, 1))?;
 
-                self.selected_panel = Some(panel.clone());
+                self.set_selected_panel(Some(panel.clone()));
 
                 Layout::Single { panel }
             }
             Layout::Single { panel } => {
                 // -3 cols (left border, right border, center border)
                 // -4 rows (top border, bottom border, cmd input, cmd bottom border)
-                let mut size = Self::get_terminal_size()? - Size::new(4, 3);
-                size.divide_by_const(2);
+                let term_size = Self::get_terminal_size()?;
+                let size = term_size - Size::new(4, 3);
+                let mut left_size = size;
+                left_size.divide_width_by_const(2);
+                let right_size = Size::new(size.get_rows(), size.get_cols() - left_size.get_cols());
 
                 let mut left = panel.clone(); // The location stays the same but the size needs to be re-adjusted
-                left.resize(&size);
-                let right = self.init_panel(size, (2 + size.get_cols(), 1 + size.get_rows()))?; // 2 to account for the left and center borders
+                left.resize(left_size.clone());
+                let right = self.init_panel(
+                    right_size,
+                    (2 + left_size.get_cols(), 1 + left_size.get_rows()),
+                )?; // 2 to account for the left and center borders
 
                 Layout::HorizontalStack { left, right }
             }
@@ -207,7 +214,13 @@ impl Display {
     }
 
     fn init_panel(&mut self, size: Size, location: (u16, u16)) -> Result<PanelPtr, Error> {
-        let mut panel = PanelPtr::new(&self.init_command, size, self.panels.len(), location)?;
+        let mut panel = PanelPtr::new(
+            &self.init_command,
+            size,
+            self.panels.len(),
+            location,
+            self.config.get_thread_time(),
+        )?;
         panel.register();
 
         self.panels.push(panel.clone());
@@ -261,6 +274,8 @@ impl Display {
                     stdout.write(&row);
                 }
 
+                queue!(stdout, style::ResetColor);
+
                 for (r, row) in right_contents.into_iter().enumerate() {
                     queue!(
                         stdout,
@@ -268,6 +283,8 @@ impl Display {
                     );
                     stdout.write(&row);
                 }
+
+                Self::queue_vertical_centre_line(&mut stdout, &size, left.size().get_cols() + 1);
             }
             _ => (),
         }
@@ -390,12 +407,37 @@ impl Display {
             style::Print(Self::CORNER_BORDER_CHARACTER),
         );
     }
+
+    fn queue_vertical_centre_line(stdout: &mut Stdout, terminal_size: &Size, col: u16) {
+        for r in 1..terminal_size.get_rows() - 3 {
+            queue!(
+                stdout,
+                cursor::MoveTo(col, r),
+                style::Print(Self::VERTICAL_BORDER_CHARACTER)
+            );
+        }
+    }
+
+    fn set_selected_panel(&mut self, panel_ptr: Option<PanelPtr>) {
+        self.processor.set_command_mode(panel_ptr.is_none());
+        self.selected_panel = panel_ptr;
+    }
 }
 
 impl PanelPtr {
-    pub fn new(command: &str, size: Size, id: usize, location: (u16, u16)) -> Result<Self, Error> {
+    pub fn new(
+        command: &str,
+        size: Size,
+        id: usize,
+        location: (u16, u16),
+        thread_sleep_time: Duration,
+    ) -> Result<Self, Error> {
         return Ok(Self(Rc::new(RefCell::new(Panel::new(
-            command, size, id, location,
+            command,
+            size,
+            id,
+            location,
+            thread_sleep_time,
         )?))));
     }
 
@@ -405,7 +447,7 @@ impl PanelPtr {
     wrap_panel_method!(receive_input, pub mut, bytes: Vec<u8> => Result<(), Error>);
     wrap_panel_method!(cursor_position, pub, => Point<u16>);
     wrap_panel_method!(hide_cursor, pub, => bool);
-    wrap_panel_method!(resize, pub mut, size: &Size => Result<(), Error>);
+    wrap_panel_method!(resize, pub mut, size: Size => Result<(), Error>);
     wrap_panel_method!(size, pub, => Size);
 }
 
@@ -418,9 +460,9 @@ impl Panel {
         size: Size,
         id: usize,
         location: (u16, u16),
-        sender: Sender<SenderID>,
+        thread_sleep_time: Duration,
     ) -> Result<Self, Error> {
-        let mut pty = PTY::new(command, &size)?;
+        let mut pty = PTY::new(command, &size, thread_sleep_time)?;
         let parser = Parser::new(size.get_rows(), size.get_cols(), Self::SCROLLBACK_LEN);
 
         let poll = match Poll::new() {
@@ -433,7 +475,7 @@ impl Panel {
             }
         };
 
-        let n = Self {
+        return Ok(Self {
             pty,
             parser,
             size,
@@ -441,9 +483,7 @@ impl Panel {
             events: Events::with_capacity(128),
             id,
             location,
-        };
-
-        thread::spawn(move || {});
+        });
     }
 
     pub fn register(&mut self) {
@@ -510,8 +550,12 @@ impl Panel {
             .collect();
     }
 
-    pub fn resize(&mut self, size: &Size) -> Result<(), Error> {
-        return self.pty.resize(size);
+    pub fn resize(&mut self, size: Size) -> Result<(), Error> {
+        self.size = size;
+        self.parser
+            .set_size(self.size.get_rows(), self.size.get_cols());
+
+        return self.pty.resize(&self.size);
     }
 
     /// Writes bytes to the PTY
