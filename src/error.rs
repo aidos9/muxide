@@ -39,7 +39,16 @@ pub enum ErrorType {
         reason: String,
     },
 
-    DisplayNotRunning,
+    FailedTTYAcquisitionError {
+        reason: String,
+    },
+
+    EnterRawModeError {
+        reason: String,
+    },
+
+    DisplayNotRunningError,
+    InputManagerRunningError,
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -79,7 +88,15 @@ impl Error {
             ErrorType::StdoutFlushError { reason } => return Self::new_stdout_flush_error(reason),
             ErrorType::OpenPTYError { reason } => return Self::new_open_pty_error(reason),
             ErrorType::FCNTLError { reason } => return Self::new_fcntl_error(reason),
-            ErrorType::DisplayNotRunning => return Self::new_display_not_running_error(),
+            ErrorType::DisplayNotRunningError => return Self::new_display_not_running_error(),
+            ErrorType::InputManagerRunningError => return Self::new_input_manager_running_error(),
+            ErrorType::FailedTTYAcquisitionError { reason } => {
+                return Self::new_failed_tty_acquisition_error(reason)
+            }
+
+            ErrorType::EnterRawModeError { reason } => {
+                return Self::new_enter_raw_mode_error(reason)
+            }
         };
     }
 
@@ -179,6 +196,30 @@ impl Error {
         return Self {
             debug_description: "Display is not running".to_string(),
             description: "Display is not running".to_string(),
+            terminate: true,
+        };
+    }
+
+    fn new_input_manager_running_error() -> Self {
+        return Self {
+            debug_description: "The input manager is already running".to_string(),
+            description: "The input manager is already running".to_string(),
+            terminate: true,
+        };
+    }
+
+    fn new_failed_tty_acquisition_error(reason: String) -> Self {
+        return Self {
+            debug_description: format!("Failed to acquire TTY. Reason: {}", reason),
+            description: "Failed to acquire TTY.".to_string(),
+            terminate: true,
+        };
+    }
+
+    fn new_enter_raw_mode_error(reason: String) -> Self {
+        return Self {
+            debug_description: format!("Failed to enter TTY raw mode. Reason: {}", reason),
+            description: "Failed to enter TTY raw mode".to_string(),
             terminate: true,
         };
     }

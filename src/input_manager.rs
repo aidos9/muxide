@@ -1,70 +1,86 @@
 use crate::{Error, ErrorType};
-use mio::{Events, Poll};
-use std::fs::File;
-use std::io::Read;
-use std::rc::Rc;
+use std::io::{ErrorKind, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::sync::Arc;
+use std::thread;
 use termion::get_tty;
-use termion::input::TermReadEventsAndRaw;
-use termion::raw::{IntoRawMode, RawTerminal};
+use termion::raw::IntoRawMode;
+use tokio::sync::mpsc::Sender;
 
 /// The input manager controls all input received from the TTY passing it to the display
 pub struct InputManager {
-    read_content: Arc<Mutex<Vec<Vec<u8>>>>,
     running: Arc<AtomicBool>,
 }
 
 impl InputManager {
-    /// Attempt to create a new instance of an InputManager.
-    pub fn new() -> Self {
-        return Self {
-            read_content: Arc::new(Mutex::new(Vec::new())),
+    /// The buffer size for stdin.
+    const BUFFER_SIZE: usize = 2048;
+
+    /// Attempt to create a new IOManager instance. This will start a new thread that will read
+    /// from the Stdin and send the information through the sender instance supplied.
+    pub fn start(sender: Sender<Vec<u8>>) -> Result<Self, Error> {
+        let mut val = Self {
             running: Arc::new(AtomicBool::new(false)),
         };
+
+        return val.start_internal(sender).map(|_| val);
     }
 
-    pub fn start(&mut self) -> bool {
+    fn start_internal(&mut self, sender: Sender<Vec<u8>>) -> Result<(), Error> {
+        // Ensure this method hasn't been called more than once
         if self.is_running() {
-            return false;
+            return Err(ErrorType::InputManagerRunningError.into_error());
         }
 
-        let mut tty_input = get_tty().unwrap().into_raw_mode().unwrap();
-        let mut storage = self.read_content.clone();
+        // Put the tty into raw mode
+        let mut tty_input = get_tty()
+            .map_err(|e| {
+                ErrorType::FailedTTYAcquisitionError {
+                    reason: format!("{}", e),
+                }
+                .into_error()
+            })?
+            .into_raw_mode()
+            .map_err(|e| {
+                ErrorType::EnterRawModeError {
+                    reason: format!("{}", e),
+                }
+                .into_error()
+            })?;
         let mut running = self.running.clone();
         running.store(true, Ordering::SeqCst);
 
         thread::spawn(move || {
-            loop {
-                let mut buffer = [0u8; 1024];
-                let end = tty_input.read(&mut buffer).unwrap();
-                let mut content = buffer[0..end].to_vec();
+            let mut buffer = [0u8; Self::BUFFER_SIZE];
 
-                match storage.lock() {
-                    Ok(mut storage) => {
-                        storage.push(content);
-                    }
-                    Err(_) => break,
+            loop {
+                // Read bytes into the buffer
+                let size = match tty_input.read(&mut buffer) {
+                    Ok(s) => s,
+                    Err(e) => match e.kind() {
+                        ErrorKind::TimedOut | ErrorKind::Interrupted | ErrorKind::WouldBlock => {
+                            continue
+                        }
+                        _ => break,
+                    },
+                };
+
+                // Copy them into a vector
+                let mut content = buffer[0..size].to_vec();
+
+                if sender.blocking_send(content).is_err() {
+                    break;
                 }
             }
 
             running.store(false, Ordering::SeqCst);
         });
 
-        return true;
+        return Ok(());
     }
 
+    /// Returns the status of the input thread, if it is still running or not.
     pub fn is_running(&self) -> bool {
         return self.running.load(Ordering::SeqCst);
-    }
-
-    pub fn take_buffer(&mut self) -> Vec<Vec<u8>> {
-        let mut lock = self.read_content.lock().unwrap();
-        let res = lock.clone();
-        lock.clear();
-
-        return res;
     }
 }

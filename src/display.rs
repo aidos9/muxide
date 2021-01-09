@@ -2,7 +2,7 @@ use crate::config::Command;
 use crate::error::{Error, ErrorType};
 use crate::geometry::{Point, Size};
 use crate::logic_manager::LogicManager;
-use crate::pty::PTY;
+use crate::pty::Pty;
 use crate::Config;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
@@ -47,27 +47,19 @@ macro_rules! wrap_panel_method {
 struct PanelPtr(Rc<RefCell<Panel>>);
 
 pub struct Display {
-    init_command: String,
-    layout: Layout,
-    initialized_output: bool,
     panels: Vec<PanelPtr>,
-    prompt_content: String,
     selected_panel: Option<PanelPtr>,
-    changed_state: bool,
-    processor: LogicManager,
-    continue_execution: bool,
-    cursor_position_prompt: u16,
-    config: Config,
+    layout: Layout,
+    prompt_content: String,
+    prompt_cursor_offset: u16,
+    completed_initialization: bool,
 }
 
 struct Panel {
-    pty: PTY,
-    parser: Parser,
-    size: Size,
-    poll: Poll,
-    events: Events,
-    location: (u16, u16), // The top left first cell
     id: usize,
+    size: Size,
+    content: Vec<Vec<u8>>,
+    location: (u16, u16), // The top left first cell
 }
 
 enum Layout {
@@ -97,19 +89,14 @@ impl Display {
     const CORNER_BORDER_CHARACTER: char = '+';
     const PROMPT_STRING: &'static str = "cmd > ";
 
-    pub fn new(init_command: &str, config: Config) -> Self {
+    pub fn new() -> Self {
         return Self {
-            init_command: init_command.to_string(),
             layout: Layout::Empty,
-            initialized_output: false,
             panels: Vec::new(),
             prompt_content: String::new(),
+            prompt_cursor_offset: 0,
             selected_panel: None,
-            changed_state: false,
-            processor: LogicManager::new(),
-            continue_execution: true,
-            cursor_position_prompt: 0,
-            config,
+            completed_initialization: false,
         };
     }
 

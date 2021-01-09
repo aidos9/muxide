@@ -4,8 +4,6 @@ version = "0.1.0"
 authors = ["aidos9 <20310468+aidos9@users.noreply.github.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 vt100 = "0.8.1"
 crossterm = "0.19"
@@ -15,3 +13,5 @@ num-traits = "0.2"
 nix = "0.19"
 libc = "0.2"
 chan-signal = "0.3"
+tokio = { version = "1.0", features = ["full"] }
+futures = { version = "0.3", features = ["bilock", "io-compat", "unstable"]}
