@@ -59,7 +59,10 @@ struct Panel {
     id: usize,
     size: Size,
     content: Vec<Vec<u8>>,
-    location: (u16, u16), // The top left first cell
+    hide_cursor: bool,
+    cursor_col: u16,
+    cursor_row: u16,
+    location: (u16, u16), // (col, row). The location in the global space of the top left (the first) cell
 }
 
 enum Layout {
@@ -100,10 +103,6 @@ impl Display {
         };
     }
 
-    pub fn quit(&self) -> bool {
-        return !self.continue_execution;
-    }
-
     pub fn init(mut self) -> Option<Self> {
         let mut stdout = stdout();
         queue!(
@@ -114,63 +113,44 @@ impl Display {
 
         stdout.flush().ok()?;
 
-        self.initialized_output = true;
+        self.completed_initialization = true;
         return Some(self);
     }
 
-    pub fn receive_input(&mut self, bytes: Vec<u8>) -> Result<(), Error> {
-        if !self.initialized_output | !self.continue_execution {
-            return Err(ErrorType::DisplayNotRunning.into_error());
+    /// Set the contents of a panel
+    /// Error: If no panel exists with the specified id, or if init has not been run
+    pub fn update_panel_content(&mut self, id: usize, content: Vec<Vec<u8>>) -> Result<(), Error> {
+        if !self.completed_initialization {
+            return Err(ErrorType::DisplayNotRunningError.into_error());
         }
 
-        match self.processor.process_bytes(bytes.clone()) {
-            Some(Command::QuitCommand) => {
-                self.continue_execution = false;
+        for panel in &mut self.panels {
+            if panel.get_id() == id {
+                panel.set_content(content);
                 return Ok(());
             }
-            Some(Command::EnterInputCommand) => {
-                self.set_selected_panel(None);
-                self.changed_state = true;
-                return Ok(());
-            }
-            Some(Command::StopInputCommand) => {
-                if self.panels.len() > 0 {
-                    self.set_selected_panel(Some(self.panels[0].clone()));
-                    self.changed_state = true;
-                    return Ok(());
-                }
-            }
-            Some(Command::OpenPanelCommand) => {
-                return self.open_new_panel();
-            }
-            Some(_) => unimplemented!("Handling commands"), // A command was received in the future this will be handled
-            None => (),
         }
 
-        self.prompt_content = self.processor.get_cmd_buffer_string();
-        self.changed_state = self.processor.redraw_required();
-
-        match &mut self.selected_panel {
-            Some(panel) => {
-                panel.receive_input(bytes).unwrap();
-            }
-            None => (),
-        }
-
-        return Ok(());
+        return Err(ErrorType::NoPanelWithIDError { id }.into_error());
     }
 
-    pub fn open_new_panel(&mut self) -> Result<(), Error> {
-        if !self.initialized_output | !self.continue_execution {
-            return Ok(());
+    /// Opens a new panel giving it the specified id. The id should be unique but it is
+    /// not enforced by this method. The method will return a vector of all the changed panels
+    /// id's and new size.
+    pub fn open_new_panel(&mut self, id: usize) -> Result<Vec<(usize, Size)>, Error> {
+        if !self.completed_initialization {
+            return Err(ErrorType::DisplayNotRunningError.into_error());
         }
+
+        let mut changed = Vec::new();
 
         let new_layout = match &self.layout {
             Layout::Empty => {
                 let size = Self::get_terminal_size()?;
-                let panel = self.init_panel(size - Size::new(4, 2), (1, 1))?;
+                let panel = self.init_panel(id, size - Size::new(4, 2), (1, 1));
 
-                self.set_selected_panel(Some(panel.clone()));
+                self.selected_panel = Some(panel.clone());
+                changed.push((id, size));
 
                 Layout::Single { panel }
             }
@@ -184,11 +164,15 @@ impl Display {
                 let right_size = Size::new(size.get_rows(), size.get_cols() - left_size.get_cols());
 
                 let mut left = panel.clone(); // The location stays the same but the size needs to be re-adjusted
-                left.resize(left_size.clone());
+                left.set_size(left_size.clone());
                 let right = self.init_panel(
+                    id,
                     right_size,
                     (2 + left_size.get_cols(), 1 + left_size.get_rows()),
-                )?; // 2 to account for the left and center borders
+                ); // 2 to account for the left and center borders
+
+                changed.push((id, right_size));
+                changed.push((left.get_id(), left_size));
 
                 Layout::HorizontalStack { left, right }
             }
@@ -197,42 +181,19 @@ impl Display {
 
         self.layout = new_layout;
 
-        return Ok(());
-    }
-
-    fn init_panel(&mut self, size: Size, location: (u16, u16)) -> Result<PanelPtr, Error> {
-        let mut panel = PanelPtr::new(
-            &self.init_command,
-            size,
-            self.panels.len(),
-            location,
-            self.config.get_thread_time(),
-        )?;
-        panel.register();
-
-        self.panels.push(panel.clone());
-
-        return Ok(panel);
-    }
-
-    /// Returns true if a render is required
-    pub fn pre_render(&mut self) -> Result<bool, Error> {
-        if !self.initialized_output | !self.continue_execution {
-            return Ok(false);
-        }
-
-        let mut changed = self.changed_state;
-        self.changed_state = false;
-
-        for panel in &mut self.panels {
-            changed = changed || panel.read_pty_content()?;
-        }
-
         return Ok(changed);
     }
 
+    fn init_panel(&mut self, id: usize, size: Size, location: (u16, u16)) -> PanelPtr {
+        let mut panel = PanelPtr::new(id, size, location);
+
+        self.panels.push(panel.clone());
+
+        return panel;
+    }
+
     pub fn render(&mut self) -> Result<(), Error> {
-        if !self.initialized_output | !self.continue_execution {
+        if !self.completed_initialization {
             return Ok(());
         }
 
@@ -245,7 +206,7 @@ impl Display {
 
         match &mut self.layout {
             Layout::Single { panel } => {
-                let contents = panel.get_display_contents();
+                let contents = panel.get_content();
 
                 for (r, row) in contents.into_iter().enumerate() {
                     queue!(stdout, cursor::MoveTo(1, r as u16 + 1));
@@ -253,8 +214,8 @@ impl Display {
                 }
             }
             Layout::HorizontalStack { left, right } => {
-                let left_contents = left.get_display_contents();
-                let right_contents = right.get_display_contents();
+                let left_contents = left.get_content();
+                let right_contents = right.get_content();
 
                 for (r, row) in left_contents.into_iter().enumerate() {
                     queue!(stdout, cursor::MoveTo(1, r as u16 + 1));
@@ -266,12 +227,16 @@ impl Display {
                 for (r, row) in right_contents.into_iter().enumerate() {
                     queue!(
                         stdout,
-                        cursor::MoveTo(left.size().get_cols() + 2, r as u16 + 1)
+                        cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 1)
                     );
                     stdout.write(&row);
                 }
 
-                Self::queue_vertical_centre_line(&mut stdout, &size, left.size().get_cols() + 1);
+                Self::queue_vertical_centre_line(
+                    &mut stdout,
+                    &size,
+                    left.get_size().get_cols() + 1,
+                );
             }
             _ => (),
         }
@@ -306,14 +271,14 @@ impl Display {
     fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) {
         match &self.selected_panel {
             Some(panel) => {
-                let loc = panel.cursor_position();
+                let loc = panel.get_cursor_position();
 
                 queue!(
                     stdout,
                     cursor::MoveTo(loc.column(), loc.row()) // Column, row
                 );
 
-                if panel.hide_cursor() {
+                if panel.get_hide_cursor() {
                     execute!(stdout, cursor::Hide);
                 } else {
                     execute!(stdout, cursor::Show);
@@ -405,171 +370,79 @@ impl Display {
         }
     }
 
-    fn set_selected_panel(&mut self, panel_ptr: Option<PanelPtr>) {
-        self.processor.set_command_mode(panel_ptr.is_none());
-        self.selected_panel = panel_ptr;
+    pub fn set_selected_panel(&mut self, id: Option<usize>) {
+        if id.is_none() {
+            self.selected_panel = None;
+            return;
+        }
+
+        let id = id.unwrap();
+
+        for panel in &self.panels {
+            if panel.get_id() == id {
+                self.selected_panel = Some(panel.clone());
+            }
+        }
+
+        self.selected_panel = None;
     }
 }
 
 impl PanelPtr {
-    pub fn new(
-        command: &str,
-        size: Size,
-        id: usize,
-        location: (u16, u16),
-        thread_sleep_time: Duration,
-    ) -> Result<Self, Error> {
-        return Ok(Self(Rc::new(RefCell::new(Panel::new(
-            command,
-            size,
-            id,
-            location,
-            thread_sleep_time,
-        )?))));
+    pub fn new(id: usize, size: Size, location: (u16, u16)) -> Self {
+        return Self(Rc::new(RefCell::new(Panel::new(id, size, location))));
     }
 
-    wrap_panel_method!(read_pty_content, pub mut, => Result<bool, Error>);
-    wrap_panel_method!(register, pub mut,);
-    wrap_panel_method!(get_display_contents, pub, => Vec<Vec<u8>>);
-    wrap_panel_method!(receive_input, pub mut, bytes: Vec<u8> => Result<(), Error>);
-    wrap_panel_method!(cursor_position, pub, => Point<u16>);
-    wrap_panel_method!(hide_cursor, pub, => bool);
-    wrap_panel_method!(resize, pub mut, size: Size => Result<(), Error>);
-    wrap_panel_method!(size, pub, => Size);
+    wrap_panel_method!(get_cursor_position, pub, => Point<u16>);
+    wrap_panel_method!(set_content, pub mut, content: Vec<Vec<u8>>);
+    wrap_panel_method!(get_content, pub, => Vec<Vec<u8>>);
+    wrap_panel_method!(get_id, pub, => usize);
+    wrap_panel_method!(set_size, pub mut, size: Size);
+    wrap_panel_method!(get_size, pub, => Size);
+    wrap_panel_method!(get_hide_cursor, pub, => bool);
 }
 
 impl Panel {
-    const BUFFER_SIZE: usize = 4096;
-    const SCROLLBACK_LEN: usize = 120;
-
-    pub fn new(
-        command: &str,
-        size: Size,
-        id: usize,
-        location: (u16, u16),
-        thread_sleep_time: Duration,
-    ) -> Result<Self, Error> {
-        let mut pty = PTY::new(command, &size, thread_sleep_time)?;
-        let parser = Parser::new(size.get_rows(), size.get_cols(), Self::SCROLLBACK_LEN);
-
-        let poll = match Poll::new() {
-            Ok(p) => p,
-            Err(e) => {
-                return Err(ErrorType::PollCreationError {
-                    reason: format!("{}", e),
-                }
-                .into_error());
-            }
-        };
-
-        return Ok(Self {
-            pty,
-            parser,
+    pub fn new(id: usize, size: Size, location: (u16, u16)) -> Self {
+        return Self {
+            content: Vec::new(),
             size,
-            poll,
-            events: Events::with_capacity(128),
             id,
             location,
-        });
-    }
-
-    pub fn register(&mut self) {
-        self.poll
-            .registry()
-            .register(&mut self.pty, Token(0), Interest::READABLE);
-    }
-
-    pub fn read_pty_content(&mut self) -> Result<bool, Error> {
-        match self
-            .poll
-            .poll(&mut self.events, Some(Duration::from_millis(100)))
-        {
-            Ok(_) => (),
-            Err(e) => {
-                match e.kind() {
-                    // We will treat these two errors as non-terminal
-                    ErrorKind::TimedOut | ErrorKind::Interrupted => {
-                        return Ok(false);
-                    }
-                    _ => {
-                        return Err(ErrorType::PollingError {
-                            reason: format!("{}", e),
-                        }
-                        .into_error())
-                    }
-                }
-            }
-        }
-
-        let mut changed = false;
-
-        for event in self.events.iter() {
-            match event.token() {
-                Token(0) => {
-                    let mut buffer = [0; Self::BUFFER_SIZE];
-                    let count = match self.pty.read(&mut buffer) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            return Err(ErrorType::IOError {
-                                read: true,
-                                target: "PTY".to_string(),
-                                reason: format!("{}", e),
-                            }
-                            .into_error())
-                        }
-                    };
-
-                    self.parser.process(&buffer[..count]);
-                    changed = true;
-                }
-                _ => (),
-            }
-        }
-
-        return Ok(changed);
-    }
-
-    pub fn get_display_contents(&self) -> Vec<Vec<u8>> {
-        return self
-            .parser
-            .screen()
-            .rows_formatted(0, self.parser.screen().size().1)
-            .collect();
-    }
-
-    pub fn resize(&mut self, size: Size) -> Result<(), Error> {
-        self.size = size;
-        self.parser
-            .set_size(self.size.get_rows(), self.size.get_cols());
-
-        return self.pty.resize(&self.size);
-    }
-
-    /// Writes bytes to the PTY
-    pub fn receive_input(&mut self, bytes: Vec<u8>) -> Result<(), Error> {
-        return self.pty.write_all(&bytes).map_err(|e| {
-            ErrorType::IOError {
-                read: false,
-                target: "PTY".to_string(),
-                reason: format!("{}", e),
-            }
-            .into_error()
-        });
+            hide_cursor: false,
+            cursor_col: 0,
+            cursor_row: 0,
+        };
     }
 
     /// Returns the cursor position in the global space.
-    pub fn cursor_position(&self) -> Point<u16> {
-        let (row, col) = self.parser.screen().cursor_position();
-        return Point::new_origin(col, row, self.location);
+    pub fn get_cursor_position(&self) -> Point<u16> {
+        return Point::new_origin(self.cursor_col, self.cursor_row, self.location);
     }
 
-    /// Returns if the current panel wants the cursor hidden
-    pub fn hide_cursor(&self) -> bool {
-        return self.parser.screen().hide_cursor();
+    /// Set the content of this panel
+    pub fn set_content(&mut self, content: Vec<Vec<u8>>) {
+        self.content = content;
     }
 
-    /// Returns the size of the current panel.
-    pub fn size(&self) -> Size {
+    /// Returns an immutable reference to the content of this panel
+    pub fn get_content(&self) -> Vec<Vec<u8>> {
+        return self.content.clone();
+    }
+
+    pub fn get_id(&self) -> usize {
+        return self.id;
+    }
+
+    pub fn set_size(&mut self, size: Size) {
+        self.size = size;
+    }
+
+    pub fn get_size(&self) -> Size {
         return self.size;
+    }
+
+    pub fn get_hide_cursor(&self) -> bool {
+        return self.hide_cursor;
     }
 }

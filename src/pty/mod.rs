@@ -2,6 +2,7 @@
 This code was heavily based and inspired by https://github.com/pkgw/stund/blob/master/tokio-pty-process/
 */
 
+use crate::error::{Error, ErrorType};
 use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::Winsize;
 use nix::{fcntl, unistd};
@@ -23,7 +24,7 @@ pub struct Pty {
 // pub struct PtyWrite(BiLock<File>);
 
 impl Pty {
-    pub fn open() -> Result<Self, io::Error> {
+    pub fn open(cmd: &str) -> Result<Self, Error> {
         // Comment taken directly from: https://github.com/pkgw/stund/blob/master/tokio-pty-process/src/lib.rs
         // On MacOS, O_NONBLOCK is not documented as an allowed option to
         // posix_openpt(), but it is in fact allowed and functional, and
@@ -37,7 +38,7 @@ impl Pty {
         let (file_descriptor, slave) = Self::open_pty().unwrap();
 
         let mut pty_command_handle = match unsafe {
-            Command::new("/usr/local/bin/fish")
+            Command::new(cmd)
                 .stdin(
                     Stdio::from_raw_fd(slave), // Unsafe
                 )
@@ -53,21 +54,30 @@ impl Pty {
         } {
             Ok(h) => h,
             Err(e) => {
-                panic!("{:?}", e);
+                return Err(ErrorType::PTYSpawnError {
+                    description: e.to_string(),
+                }
+                .into_error());
             }
         };
 
         if APPLY_NONBLOCK_LATER {
             let flags = unsafe { libc::fcntl(file_descriptor, libc::F_GETFL, 0) };
             if flags < 0 {
-                return Err(io::Error::last_os_error());
+                return Err(ErrorType::FCNTLError {
+                    reason: io::Error::last_os_error().to_string(),
+                }
+                .into_error());
             }
 
             let res =
                 unsafe { libc::fcntl(file_descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) };
 
             if res == -1 {
-                return Err(io::Error::last_os_error());
+                return Err(ErrorType::FCNTLError {
+                    reason: io::Error::last_os_error().to_string(),
+                }
+                .into_error());
             }
         }
 

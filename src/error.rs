@@ -47,6 +47,10 @@ pub enum ErrorType {
         reason: String,
     },
 
+    NoPanelWithIDError {
+        id: usize,
+    },
+
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -96,6 +100,10 @@ impl Error {
 
             ErrorType::EnterRawModeError { reason } => {
                 return Self::new_enter_raw_mode_error(reason)
+            }
+
+            ErrorType::NoPanelWithIDError { id } => {
+                return Self::new_no_panel_with_id(id);
             }
         };
     }
@@ -220,6 +228,14 @@ impl Error {
         return Self {
             debug_description: format!("Failed to enter TTY raw mode. Reason: {}", reason),
             description: "Failed to enter TTY raw mode".to_string(),
+            terminate: true,
+        };
+    }
+
+    fn new_no_panel_with_id(id: usize) -> Self {
+        return Self {
+            debug_description: format!("No panel with the id: {}", id),
+            description: format!("No panel with the id: {}", id),
             terminate: true,
         };
     }

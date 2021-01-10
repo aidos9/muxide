@@ -5,6 +5,7 @@ use termion::event::Key;
 #[derive(Clone, Eq, PartialEq)]
 pub struct Config {
     key_map: KeyMap,
+    panel_init_command: String,
     thread_delay_period: Option<Duration>,
 }
 
@@ -41,6 +42,8 @@ impl Config {
     pub fn new() -> Self {
         return Self {
             key_map: KeyMap::default(),
+            panel_init_command: "/usr/local/bin/fish".to_string(),
+            /// NOTE: Change this
             thread_delay_period: None,
         };
     }
@@ -57,6 +60,10 @@ impl Config {
 
     pub fn mut_key_map(&mut self) -> &mut KeyMap {
         return &mut self.key_map;
+    }
+
+    pub fn get_panel_init_command(&self) -> &String {
+        return &self.panel_init_command;
     }
 }
 
