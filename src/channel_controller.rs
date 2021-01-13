@@ -67,22 +67,34 @@ impl ChannelController {
         }
     }
 
+    pub async fn shutdown_all(mut self) {
+        let slp = time::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+        select! {
+            _ = futures::future::join_all(self.pty_triples.iter().map(|trip| trip.tx.send(()))) => {}
+            _ = slp => {}
+        };
+    }
+
     pub async fn wait_for_message(&mut self) -> ControllerResponse {
         let bytes;
         let mut id = None;
 
-        tokio::select! {
-            b = self.stdin_rx.recv() => {
-                bytes = b;
-            }
-
-            (b, i, _) = futures::future::select_all(
-            self.pty_triples
-                .iter_mut()
-                .map(|mut pair| pair.rx.recv().boxed())) => {
+        if self.pty_triples.is_empty() {
+            bytes = self.stdin_rx.recv().await;
+        } else {
+            tokio::select! {
+                b = self.stdin_rx.recv() => {
                     bytes = b;
-                    id = Some(i);
-               }
+                }
+
+                (b, i, _) = futures::future::select_all(
+                self.pty_triples
+                    .iter_mut()
+                    .map(|pair| pair.rx.recv().boxed())) => {
+                        bytes = b;
+                        id = Some(i);
+                   }
+            }
         }
 
         if let Some(i) = id {

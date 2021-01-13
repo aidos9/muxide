@@ -117,7 +117,8 @@ impl Pty {
         let (master, slave) = (res.master, res.slave);
 
         let res =
-            OFlag::from_bits(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| ())?).unwrap();
+            OFlag::from_bits_truncate(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| ())?);
+
         fcntl::fcntl(master, FcntlArg::F_SETFL(res)).map_err(|e| ())?;
 
         return Ok((master, slave));

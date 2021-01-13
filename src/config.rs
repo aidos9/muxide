@@ -18,6 +18,7 @@ pub struct KeyMap {
 pub enum Command {
     EnterInputCommand,
     StopInputCommand,
+    ToggleInputCommand,
     ArrowLeftCommand,
     ArrowRightCommand,
     ArrowUpCommand,
@@ -42,7 +43,7 @@ impl Config {
     pub fn new() -> Self {
         return Self {
             key_map: KeyMap::default(),
-            panel_init_command: "/usr/local/bin/fish".to_string(),
+            panel_init_command: "/usr/bin/fish".to_string(),
             /// NOTE: Change this
             thread_delay_period: None,
         };
@@ -79,7 +80,7 @@ impl KeyMap {
             map: HashMap::new(),
         };
 
-        n.map.insert(Key::Ctrl('p'), Command::EnterInputCommand);
+        n.map.insert(Key::Ctrl('a'), Command::ToggleInputCommand);
         n.map.insert(Key::Ctrl('q'), Command::QuitCommand);
         n.map.insert(Key::Ctrl('o'), Command::OpenPanelCommand);
 
@@ -110,6 +111,7 @@ impl Command {
         return match self {
             Self::EnterInputCommand => "EnterInput",
             Self::StopInputCommand => "StopInput",
+            Self::ToggleInputCommand => "ToggleInput",
             Self::ArrowLeftCommand => "ArrowLeft",
             Self::ArrowRightCommand => "ArrowRight",
             Self::ArrowUpCommand => "ArrowUp",

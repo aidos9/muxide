@@ -1,99 +1,29 @@
-use muxide::pty::Pty;
-use muxide::{ChannelController, Display, InputManager};
-use std::process::Command;
-use tokio::io::{self, AsyncReadExt};
-use tokio::select;
-use tokio::sync::mpsc::Sender;
-use tokio::time::Duration;
-use vt100::Parser;
-/*
 use crossterm::{execute, terminal};
+use muxide::LogicManager;
+use std::io::stdout;
+/*
 use muxide::{Config, Display, InputManager};
-use std::io::{stdout, Write};
 use std::thread;
 use std::time::Duration;
 use tab_pty_process::{AsyncPtyMaster, CommandExt, PtyMaster};
 use tokio::io::AsyncReadExt;
 */
 
-const RENDER_LIMIT: u64 = 100;
-
-async fn read_output(mut r: Pty, tx: Sender<Vec<u8>>) {
-    let mut buf = vec![0u8; 4096];
-
-    loop {
-        select! {
-            res = r.read(&mut buf) => {
-                if let Ok(count) = res {
-                    if count == 0 {
-                        if r.running() == Some(false) {
-                            break;
-                        }
-                    }
-
-                    let mut cpy = vec![0u8; count];
-                    cpy.copy_from_slice(&buf[0..count]);
-
-                    tx.send(cpy).await;
-
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-}
-
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    // let runtime = tokio::runtime::Builder::new_multi_thread()
+async fn main() {
+    // We don't care about errors that happen with this function, if it fails that's ok.
+    let _ = execute!(stdout(), terminal::EnterAlternateScreen);
+    // let rt = tokio::runtime::Builder::new_multi_thread()
     //     .enable_io()
     //     .enable_time()
     //     .build()
     //     .unwrap();
 
-    let (mut controller, stdin_sender) = ChannelController::new();
-    let tx = controller.new_pair(0);
-    let manager = InputManager::start(stdin_sender).unwrap();
-    let mut display = Display::new().init().unwrap();
+    let logic_manager = LogicManager::new().unwrap();
+    logic_manager.start_event_loop().await;
 
-    let id_1 = 0;
-    let (_, sz) = display.open_new_panel(id_1).unwrap()[0];
-    let mut parser_1 = Parser::new(sz.get_rows(), sz.get_cols(), 120);
-    display.set_selected_panel(Some(id_1));
-    display
-        .update_panel_content(
-            id_1,
-            parser_1
-                .screen()
-                .rows_formatted(0, parser_1.screen().size().1)
-                .collect(),
-        )
-        .unwrap();
-
-    let mut pty = Pty::open().unwrap();
-    let mut buf = vec![0; 4096];
-
-    let handle = tokio::spawn(async move {
-        read_output(pty, tx).await;
-    });
-
-    loop {
-        display.render().unwrap();
-
-        let res = controller.wait_for_message().await;
-        if let Some(bytes) = res.bytes {
-            if !res.id.is_some() {
-                println!("{:?}", std::str::from_utf8(&bytes));
-            } else {
-            }
-        } else {
-            break;
-        }
-    }
-
-    return Ok(());
+    // We don't care about errors that happen with this function, if it fails that's ok.
+    let _ = execute!(stdout(), terminal::LeaveAlternateScreen);
 }
 
 /*

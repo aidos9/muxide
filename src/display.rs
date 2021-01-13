@@ -370,6 +370,16 @@ impl Display {
         }
     }
 
+    fn panel_index_for_id(&self, id: usize) -> Option<usize> {
+        for i in 0..self.panels.len() {
+            if self.panels[i].get_id() == id {
+                return Some(i);
+            }
+        }
+
+        return None;
+    }
+
     pub fn set_selected_panel(&mut self, id: Option<usize>) {
         if id.is_none() {
             self.selected_panel = None;
@@ -381,10 +391,23 @@ impl Display {
         for panel in &self.panels {
             if panel.get_id() == id {
                 self.selected_panel = Some(panel.clone());
+                return;
             }
         }
 
         self.selected_panel = None;
+    }
+
+    pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
+        let index = match self.panel_index_for_id(id) {
+            Some(i) => i,
+            None => return false,
+        };
+
+        self.panels[index].set_cursor_position(col, row);
+        self.panels[index].set_hide_cursor(hide);
+
+        return true;
     }
 }
 
@@ -394,12 +417,14 @@ impl PanelPtr {
     }
 
     wrap_panel_method!(get_cursor_position, pub, => Point<u16>);
+    wrap_panel_method!(set_cursor_position, pub mut, col: u16, row: u16);
     wrap_panel_method!(set_content, pub mut, content: Vec<Vec<u8>>);
     wrap_panel_method!(get_content, pub, => Vec<Vec<u8>>);
     wrap_panel_method!(get_id, pub, => usize);
     wrap_panel_method!(set_size, pub mut, size: Size);
     wrap_panel_method!(get_size, pub, => Size);
     wrap_panel_method!(get_hide_cursor, pub, => bool);
+    wrap_panel_method!(set_hide_cursor, pub mut, hide: bool);
 }
 
 impl Panel {
@@ -418,6 +443,11 @@ impl Panel {
     /// Returns the cursor position in the global space.
     pub fn get_cursor_position(&self) -> Point<u16> {
         return Point::new_origin(self.cursor_col, self.cursor_row, self.location);
+    }
+
+    pub fn set_cursor_position(&mut self, col: u16, row: u16) {
+        self.cursor_col = col;
+        self.cursor_row = row;
     }
 
     /// Set the content of this panel
@@ -444,5 +474,9 @@ impl Panel {
 
     pub fn get_hide_cursor(&self) -> bool {
         return self.hide_cursor;
+    }
+
+    pub fn set_hide_cursor(&mut self, hide: bool) {
+        self.hide_cursor = hide;
     }
 }
