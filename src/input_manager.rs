@@ -47,7 +47,7 @@ impl InputManager {
                 }
                 .into_error()
             })?;
-        let mut running = self.running.clone();
+        let running = self.running.clone();
         running.store(true, Ordering::SeqCst);
 
         thread::spawn(move || {
@@ -66,7 +66,7 @@ impl InputManager {
                 };
 
                 // Copy them into a vector
-                let mut content = buffer[0..size].to_vec();
+                let content = buffer[0..size].to_vec();
 
                 if sender.blocking_send(content).is_err() {
                     break;

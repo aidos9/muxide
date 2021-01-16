@@ -51,6 +51,9 @@ pub enum ErrorType {
         id: usize,
     },
 
+    QueueExecuteError {
+        reason: String,
+    },
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -65,6 +68,13 @@ pub struct Error {
 impl ErrorType {
     pub fn into_error(self) -> Error {
         return Error::new(self);
+    }
+
+    pub fn new_display_qe_error(io_error: std::io::Error) -> Error {
+        return Self::QueueExecuteError {
+            reason: io_error.to_string(),
+        }
+        .into_error();
     }
 }
 
@@ -104,6 +114,10 @@ impl Error {
 
             ErrorType::NoPanelWithIDError { id } => {
                 return Self::new_no_panel_with_id(id);
+            }
+
+            ErrorType::QueueExecuteError { reason } => {
+                return Self::new_queue_execute_error(reason);
             }
         };
     }
@@ -236,6 +250,19 @@ impl Error {
         return Self {
             debug_description: format!("No panel with the id: {}", id),
             description: format!("No panel with the id: {}", id),
+            terminate: true,
+        };
+    }
+    fn new_queue_execute_error(reason: String) -> Self {
+        return Self {
+            debug_description: format!(
+                "Failed to queue or execute display element. Reason: {}",
+                reason
+            ),
+            description: format!(
+                "Failed to queue or execute display element. Reason: {}",
+                reason
+            ),
             terminate: true,
         };
     }

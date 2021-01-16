@@ -1,4 +1,5 @@
 mod channel_controller;
+mod command_processor;
 mod config;
 mod display;
 mod error;

@@ -37,7 +37,7 @@ impl Pty {
 
         let (file_descriptor, slave) = Self::open_pty().unwrap();
 
-        let mut pty_command_handle = match unsafe {
+        let pty_command_handle = match unsafe {
             Command::new(cmd)
                 .stdin(
                     Stdio::from_raw_fd(slave), // Unsafe
@@ -102,7 +102,7 @@ impl Pty {
         return Ok(());
     }
 
-    fn open_pty() -> Result<(RawFd, RawFd), ()> {
+    fn open_pty() -> Result<(RawFd, RawFd), Error> {
         let res = nix::pty::openpty(
             Some(&Winsize {
                 ws_row: 24,
@@ -112,14 +112,31 @@ impl Pty {
             }),
             None,
         )
-        .map_err(|e| ())?;
+        .map_err(|e| {
+            ErrorType::FCNTLError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         let (master, slave) = (res.master, res.slave);
 
         let res =
-            OFlag::from_bits_truncate(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| ())?);
+            OFlag::from_bits_truncate(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| {
+                {
+                    ErrorType::FCNTLError {
+                        reason: e.to_string(),
+                    }
+                }
+                .into_error()
+            })?);
 
-        fcntl::fcntl(master, FcntlArg::F_SETFL(res)).map_err(|e| ())?;
+        fcntl::fcntl(master, FcntlArg::F_SETFL(res)).map_err(|e| {
+            ErrorType::FCNTLError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         return Ok((master, slave));
     }

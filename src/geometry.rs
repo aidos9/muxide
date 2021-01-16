@@ -1,6 +1,6 @@
 use nix::pty::Winsize;
 use num_traits::{PrimInt, Unsigned, Zero};
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 use std::ops::Sub;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]

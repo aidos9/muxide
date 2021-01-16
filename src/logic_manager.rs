@@ -5,7 +5,7 @@ use crate::error::{Error, ErrorType};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
 use termion::event;
-use termion::event::{Event, Key};
+use termion::event::Event;
 use tokio::io::AsyncReadExt;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -222,7 +222,7 @@ impl LogicManager {
         }
     }
 
-    async fn shutdown(mut self) {
+    async fn shutdown(self) {
         self.connection_manager.shutdown_all().await;
     }
 

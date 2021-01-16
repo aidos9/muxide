@@ -1,19 +1,10 @@
-use crate::config::Command;
 use crate::error::{Error, ErrorType};
 use crate::geometry::{Point, Size};
-use crate::logic_manager::LogicManager;
-use crate::pty::Pty;
-use crate::Config;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
-use mio::{Events, Interest, Poll, Token};
 use std::cell::RefCell;
-use std::io::{stdout, ErrorKind, Read, Stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::rc::Rc;
-use std::sync::mpsc::Sender;
-use std::thread;
-use std::time::Duration;
-use vt100::Parser;
 
 macro_rules! wrap_panel_method {
     ($method_name:ident, mut, $($arg_name:ident: $arg_type:ty),* $(=> $return_type:ty)?) => {
@@ -109,7 +100,8 @@ impl Display {
             stdout,
             terminal::Clear(ClearType::All),
             cursor::MoveTo(0, 0)
-        );
+        )
+        .ok()?;
 
         stdout.flush().ok()?;
 
@@ -185,7 +177,7 @@ impl Display {
     }
 
     fn init_panel(&mut self, id: usize, size: Size, location: (u16, u16)) -> PanelPtr {
-        let mut panel = PanelPtr::new(id, size, location);
+        let panel = PanelPtr::new(id, size, location);
 
         self.panels.push(panel.clone());
 
@@ -200,17 +192,29 @@ impl Display {
         let mut stdout = stdout();
         let size = Self::get_terminal_size()?;
 
-        queue!(stdout, terminal::Clear(ClearType::All));
+        queue!(stdout, terminal::Clear(ClearType::All)).map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
-        self.queue_main_borders(&mut stdout, &size);
+        self.queue_main_borders(&mut stdout, &size)?;
 
         match &mut self.layout {
             Layout::Single { panel } => {
                 let contents = panel.get_content();
 
                 for (r, row) in contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1));
-                    stdout.write(&row);
+                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1)).map_err(|e| {
+                        ErrorType::QueueExecuteError {
+                            reason: e.to_string(),
+                        }
+                        .into_error()
+                    })?;
+                    stdout
+                        .write(&row)
+                        .map_err(|e| ErrorType::new_display_qe_error(e))?;
                 }
             }
             Layout::HorizontalStack { left, right } => {
@@ -218,32 +222,62 @@ impl Display {
                 let right_contents = right.get_content();
 
                 for (r, row) in left_contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1));
-                    stdout.write(&row);
+                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1)).map_err(|e| {
+                        ErrorType::QueueExecuteError {
+                            reason: e.to_string(),
+                        }
+                        .into_error()
+                    })?;
+                    stdout
+                        .write(&row)
+                        .map_err(|e| ErrorType::new_display_qe_error(e))?;
                 }
 
-                queue!(stdout, style::ResetColor);
+                queue!(stdout, style::ResetColor).map_err(|e| {
+                    ErrorType::QueueExecuteError {
+                        reason: e.to_string(),
+                    }
+                    .into_error()
+                })?;
 
                 for (r, row) in right_contents.into_iter().enumerate() {
                     queue!(
                         stdout,
                         cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 1)
-                    );
-                    stdout.write(&row);
+                    )
+                    .map_err(|e| {
+                        ErrorType::QueueExecuteError {
+                            reason: e.to_string(),
+                        }
+                        .into_error()
+                    })?;
+                    stdout
+                        .write(&row)
+                        .map_err(|e| ErrorType::new_display_qe_error(e))?;
                 }
 
                 Self::queue_vertical_centre_line(
                     &mut stdout,
                     &size,
                     left.get_size().get_cols() + 1,
-                );
+                )?;
             }
             _ => (),
         }
 
-        self.reset_cursor(&mut stdout, &size);
+        self.reset_cursor(&mut stdout, &size).map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
-        queue!(stdout, style::ResetColor);
+        queue!(stdout, style::ResetColor).map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         return Ok(stdout.flush().map_err(|e| {
             ErrorType::StdoutFlushError {
@@ -268,7 +302,7 @@ impl Display {
     }
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
-    fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) {
+    fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), Error> {
         match &self.selected_panel {
             Some(panel) => {
                 let loc = panel.get_cursor_position();
@@ -276,12 +310,28 @@ impl Display {
                 queue!(
                     stdout,
                     cursor::MoveTo(loc.column(), loc.row()) // Column, row
-                );
+                )
+                .map_err(|e| {
+                    ErrorType::QueueExecuteError {
+                        reason: e.to_string(),
+                    }
+                    .into_error()
+                })?;
 
                 if panel.get_hide_cursor() {
-                    execute!(stdout, cursor::Hide);
+                    execute!(stdout, cursor::Hide).map_err(|e| {
+                        ErrorType::QueueExecuteError {
+                            reason: e.to_string(),
+                        }
+                        .into_error()
+                    })?;
                 } else {
-                    execute!(stdout, cursor::Show);
+                    execute!(stdout, cursor::Show).map_err(|e| {
+                        ErrorType::QueueExecuteError {
+                            reason: e.to_string(),
+                        }
+                        .into_error()
+                    })?;
                 }
             }
             None => {
@@ -292,13 +342,21 @@ impl Display {
                         Self::PROMPT_STRING.len() as u16 + 1,
                         terminal_size.get_rows() - 2
                     ) // Column, row
-                );
+                )
+                .map_err(|e| {
+                    ErrorType::QueueExecuteError {
+                        reason: e.to_string(),
+                    }
+                    .into_error()
+                })?;
             }
         }
+
+        return Ok(());
     }
 
     /// Queues the outer border for display in stdout
-    fn queue_main_borders(&self, stdout: &mut Stdout, terminal_size: &Size) {
+    fn queue_main_borders(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), Error> {
         // Print the top row
         queue!(
             stdout,
@@ -310,7 +368,13 @@ impl Display {
                     .repeat(terminal_size.get_cols() as usize - 2)
             ),
             style::Print(Self::CORNER_BORDER_CHARACTER),
-        );
+        )
+        .map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         // Print the vertical borders
         for i in 1..terminal_size.get_rows() - 3 {
@@ -320,7 +384,13 @@ impl Display {
                 style::Print(Self::VERTICAL_BORDER_CHARACTER),
                 cursor::MoveTo(terminal_size.get_cols() - 1, i),
                 style::Print(Self::VERTICAL_BORDER_CHARACTER),
-            );
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
         }
 
         // Print the horizontal border above the command prompt
@@ -334,7 +404,13 @@ impl Display {
                     .repeat(terminal_size.get_cols() as usize - 2)
             ),
             style::Print(Self::CORNER_BORDER_CHARACTER),
-        );
+        )
+        .map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         // Print the prompt and its content
         queue!(
@@ -345,7 +421,13 @@ impl Display {
             style::Print(&self.prompt_content),
             cursor::MoveTo(terminal_size.get_cols() - 1, terminal_size.get_rows() - 2),
             style::Print(Self::VERTICAL_BORDER_CHARACTER),
-        );
+        )
+        .map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
 
         queue!(
             stdout,
@@ -357,17 +439,37 @@ impl Display {
                     .repeat(terminal_size.get_cols() as usize - 2)
             ),
             style::Print(Self::CORNER_BORDER_CHARACTER),
-        );
+        )
+        .map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
+
+        return Ok(());
     }
 
-    fn queue_vertical_centre_line(stdout: &mut Stdout, terminal_size: &Size, col: u16) {
+    fn queue_vertical_centre_line(
+        stdout: &mut Stdout,
+        terminal_size: &Size,
+        col: u16,
+    ) -> Result<(), Error> {
         for r in 1..terminal_size.get_rows() - 3 {
             queue!(
                 stdout,
                 cursor::MoveTo(col, r),
                 style::Print(Self::VERTICAL_BORDER_CHARACTER)
-            );
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
         }
+
+        return Ok(());
     }
 
     fn panel_index_for_id(&self, id: usize) -> Option<usize> {
