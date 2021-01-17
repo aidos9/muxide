@@ -1,8 +1,8 @@
 use super::token::Token;
 use crate::error::Error;
 
-pub fn tokenize_string(input: String, file: Option<String>) -> Result<Vec<Token>, Error> {
-    return Tokenizer::new(input, file).execute();
+pub fn tokenize_string(input: String, file_name: Option<String>) -> Result<Vec<Token>, Error> {
+    return Tokenizer::new(input, file_name).execute();
 }
 
 struct Tokenizer {
@@ -51,7 +51,13 @@ impl Tokenizer {
 
                 current_token = Vec::new();
                 self.col += 1;
-            } else if ch.is_alphanumeric() || ch == '{' || ch == '}' {
+            } else if ch.is_alphanumeric()
+                || ch == '{'
+                || ch == '}'
+                || ch == '('
+                || ch == ')'
+                || ch == ','
+            {
                 current_token.push(ch);
                 self.col += 1;
             }
@@ -110,6 +116,18 @@ mod tests {
         "quit" => quit,
         "{" => open_curly_brace,
         "}" => close_curly_brace,
+        "(" => open_round_brace,
+        ")" => close_round_brace,
+        "," => comma,
         "bob" => identifier
     );
+
+    #[test]
+    fn test_multiple() {
+        let input = "enterinput\nstopinput".to_string();
+        let tokens = tokenize_string(input, None).unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(tokens[0].is_enter_input());
+        assert!(tokens[1].is_stop_input());
+    }
 }

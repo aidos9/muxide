@@ -55,6 +55,9 @@ impl_token!(
     ChangeLayoutToken: change_layout,
     OpenCurlyBraceToken: open_curly_brace,
     CloseCurlyBraceToken: close_curly_brace,
+    OpenRoundBraceToken: open_round_brace,
+    CloseRoundBraceToken: close_round_brace,
+    CommaToken: comma,
     QuitToken: quit
 );
 
@@ -78,6 +81,9 @@ impl Token {
             "quit" => return Self::new_quit(lexeme, row, col, file),
             "{" => return Self::new_open_curly_brace(lexeme, row, col, file),
             "}" => return Self::new_close_curly_brace(lexeme, row, col, file),
+            "(" => return Self::new_open_round_brace(lexeme, row, col, file),
+            ")" => return Self::new_close_round_brace(lexeme, row, col, file),
+            "," => return Self::new_comma(lexeme, row, col, file),
             _ => return Self::new_identifier(lexeme, row, col, file),
         }
     }
