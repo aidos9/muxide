@@ -42,14 +42,17 @@ impl Tokenizer {
                 self.row += 1;
                 self.col = 1;
             } else if ch.is_whitespace() {
-                self.tokens.push(Token::from_lexeme(
-                    current_token.iter().collect(),
-                    self.row,
-                    self.col,
-                    self.file.clone(),
-                ));
+                if current_token.len() > 0 {
+                    self.tokens.push(Token::from_lexeme(
+                        current_token.iter().collect(),
+                        self.row,
+                        self.col,
+                        self.file.clone(),
+                    ));
 
-                current_token = Vec::new();
+                    current_token = Vec::new();
+                }
+
                 self.col += 1;
             } else if ch.is_alphanumeric()
                 || ch == '{'
@@ -59,6 +62,8 @@ impl Tokenizer {
                 || ch == ','
             {
                 current_token.push(ch);
+                self.col += 1;
+            } else {
                 self.col += 1;
             }
         }
@@ -119,6 +124,9 @@ mod tests {
         "(" => open_round_brace,
         ")" => close_round_brace,
         "," => comma,
+        "string" => string,
+        "integer" => integer,
+        "boolean" => boolean,
         "bob" => identifier
     );
 

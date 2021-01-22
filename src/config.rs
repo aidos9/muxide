@@ -2,19 +2,19 @@ use std::collections::HashMap;
 use std::time::Duration;
 use termion::event::Key;
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Config {
     key_map: KeyMap,
     panel_init_command: String,
     thread_delay_period: Option<Duration>,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct KeyMap {
     map: HashMap<Key, Command>,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Command {
     EnterInputCommand,
     StopInputCommand,
@@ -30,7 +30,7 @@ pub enum Command {
     IdentifyPanelsCommand(usize),
     MapCommand(Key, Box<Command>),
     UnMapKey(Key),
-    CustomCommand(String),
+    CustomCommandCall(String),
     /*
     ChangeLayout(String),
      */
@@ -123,7 +123,7 @@ impl Command {
             Self::IdentifyPanelsCommand(_) => "Identify",
             Self::MapCommand(_, _) => "Map",
             Self::UnMapKey(_) => "UnMap",
-            Self::CustomCommand(cmd) => cmd,
+            Self::CustomCommandCall(cmd) => cmd,
             Self::QuitCommand => "Quit",
         };
     }

@@ -54,6 +54,11 @@ pub enum ErrorType {
     QueueExecuteError {
         reason: String,
     },
+
+    ScriptError {
+        description: String,
+    },
+
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -118,6 +123,10 @@ impl Error {
 
             ErrorType::QueueExecuteError { reason } => {
                 return Self::new_queue_execute_error(reason);
+            }
+
+            ErrorType::ScriptError { description } => {
+                return Self::new_script_error(description);
             }
         };
     }
@@ -253,6 +262,7 @@ impl Error {
             terminate: true,
         };
     }
+
     fn new_queue_execute_error(reason: String) -> Self {
         return Self {
             debug_description: format!(
@@ -264,6 +274,14 @@ impl Error {
                 reason
             ),
             terminate: true,
+        };
+    }
+
+    fn new_script_error(description: String) -> Self {
+        return Self {
+            debug_description: description.clone(),
+            description,
+            terminate: false,
         };
     }
 }

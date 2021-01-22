@@ -32,6 +32,38 @@ macro_rules! impl_token {
                         }) == std::mem::discriminant(self);
                     }
                 )*
+
+                pub fn get_lexeme(&self) -> String {
+                    return match self {
+                        $(
+                        Self::$name { lexeme, row, col, file } => lexeme.clone(),
+                        )*
+                    };
+                }
+
+                pub const fn get_row(&self) -> usize {
+                    return match self {
+                        $(
+                        Self::$name { lexeme, row, col, file } => *row,
+                        )*
+                    };
+                }
+
+                pub const fn get_col(&self) -> usize {
+                    return match self {
+                        $(
+                        Self::$name { lexeme, row, col, file } => *col,
+                        )*
+                    };
+                }
+
+                pub fn get_file(&self) -> Option<String> {
+                    return match self {
+                        $(
+                        Self::$name { lexeme, row, col, file } => file.clone(),
+                        )*
+                    };
+                }
             }
         }
     };
@@ -57,6 +89,9 @@ impl_token!(
     CloseCurlyBraceToken: close_curly_brace,
     OpenRoundBraceToken: open_round_brace,
     CloseRoundBraceToken: close_round_brace,
+    StringToken: string,
+    IntegerToken: integer,
+    BooleanToken: boolean,
     CommaToken: comma,
     QuitToken: quit
 );
@@ -84,6 +119,9 @@ impl Token {
             "(" => return Self::new_open_round_brace(lexeme, row, col, file),
             ")" => return Self::new_close_round_brace(lexeme, row, col, file),
             "," => return Self::new_comma(lexeme, row, col, file),
+            "str" | "string" => return Self::new_string(lexeme, row, col, file),
+            "int" | "integer" => return Self::new_integer(lexeme, row, col, file),
+            "bool" | "boolean" => return Self::new_boolean(lexeme, row, col, file),
             _ => return Self::new_identifier(lexeme, row, col, file),
         }
     }
