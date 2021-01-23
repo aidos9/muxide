@@ -28,6 +28,8 @@ impl<'a> Processor<'a> {
         while let Some(current_token) = self.current_token() {
             if current_token.is_identifier() {
                 self.consume_method_call()?;
+            } else if current_token.is_method() {
+                self.consume_method_declaration()?;
             } else {
                 return Err(ErrorType::ScriptError {
                     description: format!("Unexpected identifier: {}", current_token.get_lexeme()),
@@ -100,6 +102,46 @@ impl<'a> Processor<'a> {
         return Ok(());
     }
 
+    fn consume_method_declaration(&mut self) -> Result<(), Error> {
+        let method_token = self.consume_current().ok_or(
+            ErrorType::ScriptError {
+                description: "Unexpected lack of 'method' keyword for method declaration"
+                    .to_string(),
+            }
+            .into_error(),
+        )?;
+
+        let name = self.consume_current().ok_or(
+            ErrorType::ScriptError {
+                description: "Expected method name after method keyword.".to_string(),
+            }
+            .into_error(),
+        )?;
+
+        let opening_brace = self.consume_current().ok_or(
+            ErrorType::ScriptError {
+                description: "Expected opening brace: '{' after method name".to_string(),
+            }
+            .into_error(),
+        )?;
+
+        if !opening_brace.is_open_curly_brace() {
+            return Err(Self::token_into_error(
+                &opening_brace,
+                "Expected  '{' after method name",
+            ));
+        }
+
+        let body = self.consume_statements(true)?;
+
+        self.environment.declare_method(name.get_lexeme(), body);
+
+        return Ok(());
+    }
+
+    /// Consumes statements until end of tokens or if it is a block a closing brace is found.
+    fn consume_statements(&mut self, block: bool) -> Result<Vec<Command>, Error> {}
+
     fn consume_current(&mut self) -> Option<Token> {
         let tok = self.current_token().map(|tok| tok.clone())?;
 
@@ -152,5 +194,19 @@ impl<'a> Processor<'a> {
                 .into_error();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::generic_tokenizer::tokenize_string;
+    use super::*;
+
+    #[test]
+    fn test_method_call_fail() {
+        let input = "method()".to_string();
+        let tokens = tokenize_string(input, None).unwrap();
+        let mut env = Environment::new();
+        process_tokens(tokens, &mut env).unwrap_err();
     }
 }
