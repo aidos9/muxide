@@ -6,6 +6,20 @@ pub enum Literal {
 }
 
 impl Literal {
+    pub fn integer_from_string(input: String) -> Option<Literal> {
+        return input.parse::<i64>().ok().map(|i| Literal::from(i));
+    }
+
+    pub fn bool_from_string(input: String) -> Option<Literal> {
+        if input.to_lowercase() == "true" {
+            return Some(Literal::from(true));
+        } else if input.to_lowercase() == "false" {
+            return Some(Literal::from(false));
+        } else {
+            return None;
+        }
+    }
+
     pub fn is_string(&self) -> bool {
         return std::mem::discriminant(self) == std::mem::discriminant(&Literal::from(""));
     }
@@ -16,6 +30,14 @@ impl Literal {
 
     pub fn is_bool(&self) -> bool {
         return std::mem::discriminant(self) == std::mem::discriminant(&Literal::from(true));
+    }
+
+    pub fn integer_value(&self) -> Option<i64> {
+        return match self {
+            Literal::StringLiteral(_) => None,
+            Literal::IntegerLiteral(i) => Some(*i),
+            Literal::BooleanLiteral(_) => None,
+        };
     }
 }
 

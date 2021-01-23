@@ -63,6 +63,7 @@ impl Tokenizer {
             {
                 current_token.push(ch);
                 self.col += 1;
+            } else if ch == '{' {
             } else {
                 self.col += 1;
             }
@@ -137,5 +138,19 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert!(tokens[0].is_enter_input());
         assert!(tokens[1].is_stop_input());
+    }
+
+    #[test]
+    fn test_multiple_2() {
+        let input = "ClosePanel(Integer(5))".to_string();
+        let tokens = tokenize_string(input, None).unwrap();
+        assert_eq!(tokens.len(), 7);
+        assert!(tokens[0].is_close_panel());
+        assert!(tokens[1].is_open_round_brace());
+        assert!(tokens[2].is_integer());
+        assert!(tokens[3].is_open_round_brace());
+        assert!(tokens[4].is_identifier());
+        assert!(tokens[5].is_close_round_brace());
+        assert!(tokens[6].is_close_round_brace());
     }
 }
