@@ -188,8 +188,6 @@ impl<'a> Processor<'a> {
                 Command::ArrowUpCommand
             } else if current_token.is_arrow_down() {
                 Command::ArrowDownCommand
-            } else if current_token.is_arrow_down() {
-                Command::ArrowDownCommand
             } else if current_token.is_open_panel() {
                 Command::OpenPanelCommand
             } else if current_token.is_close_panel() {
@@ -342,7 +340,7 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn peak_token(&self) -> Option<&Token> {
+    fn peek_token(&self) -> Option<&Token> {
         if self.current_index + 1 >= self.tokens.len() {
             return None;
         } else {
@@ -383,8 +381,75 @@ impl<'a> Processor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::generic_tokenizer::tokenize_string;
+    use super::super::lexer::tokenize_string;
     use super::*;
+    use paste::paste;
+
+    macro_rules! test_commands {
+        ($({$input:expr, $command_name:expr, $name:ident}),*) => {
+            paste! {
+                $(
+                    #[test]
+                    fn [<test_$name>]() {
+                        let tokens = tokenize_string($input, None).unwrap();
+                        let mut env = Environment::new();
+                        assert_eq!(
+                            process_tokens(tokens, &mut env).unwrap(),
+                            vec![$command_name]
+                        );
+                    }
+                )*
+            }
+        };
+    }
+
+    test_commands!(
+        {
+            "OpenPanel".to_string(),
+            Command::OpenPanelCommand,
+            open_panel
+        },
+        {
+            "ClosePanel(Integer(5))".to_string(),
+            Command::ClosePanelCommand(5),
+            close_panel
+        },
+        {
+            "EnterInput".to_string(),
+            Command::EnterInputCommand,
+            enter_input
+        },
+        {
+            "StopInput".to_string(),
+            Command::StopInputCommand,
+            stop_input
+        },
+        {
+            "ToggleInput".to_string(),
+            Command::ToggleInputCommand,
+            toggle_input
+        },
+        {
+            "ArrowLeft".to_string(),
+            Command::ArrowLeftCommand,
+            arrow_left
+        },
+        {
+            "ArrowRight".to_string(),
+            Command::ArrowRightCommand,
+            arrow_right
+        },
+        {
+            "ArrowUp".to_string(),
+            Command::ArrowUpCommand,
+            arrow_up
+        },
+        {
+            "ArrowDown".to_string(),
+            Command::ArrowDownCommand,
+            arrow_down
+        }
+    );
 
     #[test]
     fn test_method_call_fail() {
@@ -392,13 +457,5 @@ mod tests {
         let tokens = tokenize_string(input, None).unwrap();
         let mut env = Environment::new();
         process_tokens(tokens, &mut env).unwrap_err();
-    }
-
-    #[test]
-    fn test_close_panel() {
-        let input = "ClosePanel(Integer(5))".to_string();
-        let tokens = tokenize_string(input, None).unwrap();
-        let mut env = Environment::new();
-        process_tokens(tokens, &mut env).unwrap();
     }
 }

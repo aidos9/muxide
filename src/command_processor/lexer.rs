@@ -2,22 +2,24 @@ use super::token::Token;
 use crate::error::Error;
 
 pub fn tokenize_string(input: String, file_name: Option<String>) -> Result<Vec<Token>, Error> {
-    return Tokenizer::new(input, file_name).execute();
+    return Lexer::new(input, file_name).execute();
 }
 
-struct Tokenizer {
+struct Lexer {
     tokens: Vec<Token>,
     buffer: Vec<char>,
+    index: usize,
     row: usize,
     col: usize,
     file: Option<String>,
 }
 
-impl Tokenizer {
+impl Lexer {
     pub fn new(input: String, file: Option<String>) -> Self {
         return Self {
             tokens: Vec::new(),
             buffer: input.chars().collect(),
+            index: 0,
             row: 1,
             col: 1,
             file,
@@ -25,60 +27,73 @@ impl Tokenizer {
     }
 
     pub fn execute(mut self) -> Result<Vec<Token>, Error> {
-        let mut current_token = Vec::new();
+        while self.index < self.buffer.len() {
+            let current_char = self.current_char();
 
-        while self.buffer.len() > 0 {
-            let ch = self.buffer.remove(0);
-
-            if ch == '\n' {
+            if current_char.is_alphanumeric() {
+                self.identifier();
+            } else if current_char == '\n' {
+                self.row += 1;
+                self.col = 1;
+                self.index += 1;
+            } else if current_char.is_whitespace() {
+                self.increment();
+            } else if current_char == '{'
+                || current_char == '}'
+                || current_char == '('
+                || current_char == ')'
+                || current_char == ','
+            {
                 self.tokens.push(Token::from_lexeme(
-                    current_token.iter().collect(),
+                    current_char.to_string(),
                     self.row,
                     self.col,
                     self.file.clone(),
                 ));
-
-                current_token = Vec::new();
-                self.row += 1;
-                self.col = 1;
-            } else if ch.is_whitespace() {
-                if current_token.len() > 0 {
-                    self.tokens.push(Token::from_lexeme(
-                        current_token.iter().collect(),
-                        self.row,
-                        self.col,
-                        self.file.clone(),
-                    ));
-
-                    current_token = Vec::new();
-                }
-
-                self.col += 1;
-            } else if ch.is_alphanumeric()
-                || ch == '{'
-                || ch == '}'
-                || ch == '('
-                || ch == ')'
-                || ch == ','
-            {
-                current_token.push(ch);
-                self.col += 1;
-            } else if ch == '{' {
-            } else {
-                self.col += 1;
+                self.increment();
             }
         }
 
-        if current_token.len() > 0 {
+        return Ok(self.tokens);
+    }
+
+    fn identifier(&mut self) {
+        let mut ident = String::new();
+
+        loop {
+            if self.index >= self.buffer.len() {
+                break;
+            }
+
+            let ch = self.current_char();
+            if !ch.is_alphanumeric() {
+                break;
+            }
+
+            ident.push(ch);
+
+            self.increment();
+        }
+
+        if ident.len() > 0 {
             self.tokens.push(Token::from_lexeme(
-                current_token.iter().collect(),
+                ident,
                 self.row,
                 self.col,
                 self.file.clone(),
             ));
         }
+    }
 
-        return Ok(self.tokens);
+    #[inline]
+    fn current_char(&self) -> char {
+        return self.buffer[self.index];
+    }
+
+    #[inline]
+    fn increment(&mut self) {
+        self.col += 1;
+        self.index += 1;
     }
 }
 

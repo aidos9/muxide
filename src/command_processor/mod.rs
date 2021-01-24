@@ -1,5 +1,5 @@
 mod environment;
-mod generic_tokenizer;
+mod lexer;
 mod literal;
 mod processor;
 mod token;
