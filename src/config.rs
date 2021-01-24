@@ -27,9 +27,9 @@ pub enum Command {
     OpenPanelCommand,
     SwapPanelsCommand(usize, usize),
     FocusPanelCommand(usize),
-    IdentifyPanelsCommand(usize),
+    IdentifyPanelsCommand,
     MapCommand(Key, Box<Command>),
-    UnMapKey(Key),
+    UnMapCommand(Key),
     CustomCommandCall(String),
     /*
     ChangeLayout(String),
@@ -120,9 +120,9 @@ impl Command {
             Self::OpenPanelCommand => "OpenPanel",
             Self::SwapPanelsCommand(_, _) => "SwapPanels",
             Self::FocusPanelCommand(_) => "FocusPanel",
-            Self::IdentifyPanelsCommand(_) => "Identify",
+            Self::IdentifyPanelsCommand => "Identify",
             Self::MapCommand(_, _) => "Map",
-            Self::UnMapKey(_) => "UnMap",
+            Self::UnMapCommand(_) => "UnMap",
             Self::CustomCommandCall(cmd) => cmd,
             Self::QuitCommand => "Quit",
         };

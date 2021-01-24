@@ -3,7 +3,8 @@ use super::token::Token;
 use crate::command_processor::Literal;
 use crate::config::Command;
 use crate::error::{Error, ErrorType};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
+use termion::event::Key;
 
 pub fn process_tokens(tokens: Vec<Token>, env: &mut Environment) -> Result<Vec<Command>, Error> {
     return Processor::new(tokens, env).run();
@@ -190,6 +191,8 @@ impl<'a> Processor<'a> {
                 Command::ArrowDownCommand
             } else if current_token.is_open_panel() {
                 Command::OpenPanelCommand
+            } else if current_token.is_identify_panels() {
+                Command::IdentifyPanelsCommand
             } else if current_token.is_close_panel() {
                 match self.consume_current() {
                     Some(tok) => {
@@ -248,6 +251,72 @@ impl<'a> Processor<'a> {
                 };
 
                 Command::ClosePanelCommand(integer_value)
+            } else if current_token.is_map() {
+                match self.consume_current() {
+                    Some(tok) => {
+                        if !tok.is_open_round_brace() {
+                            return Err(Self::token_into_error(
+                                &tok,
+                                &format!("Expected '(' after {}", current_token.get_lexeme()),
+                            ));
+                        }
+                    }
+                    None => {
+                        return Err(ErrorType::ScriptError {
+                            description: format!(
+                                "Expected '(' after {}",
+                                current_token.get_lexeme()
+                            ),
+                        }
+                        .into_error());
+                    }
+                }
+
+                let key = self.consume_key(&current_token)?;
+
+                match self.consume_current() {
+                    Some(tok) => {
+                        if !tok.is_comma() {
+                            return Err(Self::token_into_error(&tok, "Expected ',' after key."));
+                        }
+                    }
+                    None => {
+                        return Err(ErrorType::ScriptError {
+                            description: String::from("Expected ',' after key."),
+                        }
+                        .into_error());
+                    }
+                }
+
+                let command = self.consume_literal()?;
+
+                if !command.is_string() {
+                    return Err(Self::token_into_error(
+                        &current_token,
+                        "Expected a string literal command.",
+                    ));
+                }
+
+                let command = command.string_value();
+
+                match self.consume_current() {
+                    Some(tok) => {
+                        if !tok.is_close_round_brace() {
+                            return Err(Self::token_into_error(
+                                &tok,
+                                "Expected ')' after command.",
+                            ));
+                        }
+                    }
+                    None => {
+                        return Err(ErrorType::ScriptError {
+                            description: String::from("Expected ')' after command."),
+                        }
+                        .into_error());
+                    }
+                }
+
+                panic!();
             } else {
                 unimplemented!();
             }
@@ -324,6 +393,21 @@ impl<'a> Processor<'a> {
         }
     }
 
+    fn consume_key(&mut self, reference_token: &Token) -> Result<Key, Error> {
+        let string_literal = self.consume_literal()?;
+
+        if !string_literal.is_string() {
+            return Err(Self::token_into_error(
+                reference_token,
+                "Expected a string literal.",
+            ));
+        }
+
+        let string_literal: String = string_literal.string_value();
+        return Self::string_into_key(string_literal)
+            .map_err(|e| Self::token_into_error(reference_token, e));
+    }
+
     fn consume_current(&mut self) -> Option<Token> {
         let tok = self.current_token().map(|tok| tok.clone())?;
 
@@ -377,6 +461,50 @@ impl<'a> Processor<'a> {
             }
         }
     }
+
+    fn string_into_key(mut string: String) -> Result<Key, &'static str> {
+        let mut first_half = String::new();
+        let mut string: Vec<char> = string.chars().collect();
+
+        while string.len() > 0 {
+            if string[0] == '+' {
+                if first_half.len() == 0 {
+                    return Err("A single character is required to follow a '+'");
+                }
+
+                string.remove(0);
+                break;
+            } else {
+                first_half.push(string.remove(0));
+            }
+        }
+
+        if string.len() > 0 {
+            let lowered = first_half.to_lowercase();
+
+            if lowered == "ctrl" {
+                if string.len() != 1 {
+                    return Err("Expected a single character to follow '+'.");
+                } else {
+                    return Ok(Key::Ctrl(string[0]));
+                }
+            } else if lowered == "alt" {
+                if string.len() != 1 {
+                    return Err("Expected a single character to follow '+'.");
+                } else {
+                    return Ok(Key::Alt(string[0]));
+                }
+            } else {
+                return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
+            }
+        } else {
+            if first_half.len() != 1 {
+                return Err("A single character key or modifier '+' single character is expected.");
+            } else {
+                return Ok(Key::Char(first_half.remove(0)));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -384,6 +512,7 @@ mod tests {
     use super::super::lexer::tokenize_string;
     use super::*;
     use paste::paste;
+    use termion::event::Key;
 
     macro_rules! test_commands {
         ($({$input:expr, $command_name:expr, $name:ident}),*) => {
@@ -410,9 +539,34 @@ mod tests {
             open_panel
         },
         {
+            "SwapPanels(Integer(1), Integer(2))".to_string(),
+            Command::SwapPanelsCommand(1,2),
+            swap_panels
+        },
+        {
             "ClosePanel(Integer(5))".to_string(),
             Command::ClosePanelCommand(5),
             close_panel
+        },
+        {
+            "FocusPanel(Integer(1))".to_string(),
+            Command::FocusPanelCommand(1),
+            focus_panel
+        },
+        {
+            "Identify".to_string(),
+            Command::IdentifyPanelsCommand,
+            identify
+        },
+        {
+            "Map(String(Ctrl+N), String(OpenPanel))".to_string(),
+            Command::MapCommand(Key::Ctrl('N'), Box::new(Command::OpenPanelCommand)),
+            map
+        },
+        {
+            "UnMap(String(Ctrl+N))".to_string(),
+            Command::UnMapCommand(Key::Ctrl('N')),
+            unmap
         },
         {
             "EnterInput".to_string(),

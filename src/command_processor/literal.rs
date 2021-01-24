@@ -39,6 +39,20 @@ impl Literal {
             Literal::BooleanLiteral(_) => None,
         };
     }
+
+    pub fn string_value(&self) -> String {
+        return match self {
+            Literal::StringLiteral(s) => s.clone(),
+            Literal::IntegerLiteral(i) => format!("{}", i),
+            Literal::BooleanLiteral(b) => {
+                if *b {
+                    String::from("True")
+                } else {
+                    String::from("False")
+                }
+            }
+        };
+    }
 }
 
 impl From<&str> for Literal {

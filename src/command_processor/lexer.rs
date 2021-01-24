@@ -1,5 +1,6 @@
 use super::token::Token;
 use crate::error::Error;
+use crate::ErrorType;
 
 pub fn tokenize_string(input: String, file_name: Option<String>) -> Result<Vec<Token>, Error> {
     return Lexer::new(input, file_name).execute();
@@ -51,6 +52,11 @@ impl Lexer {
                     self.file.clone(),
                 ));
                 self.increment();
+            } else {
+                return Err(ErrorType::ScriptError {
+                    description: format!("Unexpected character: {}", current_char),
+                }
+                .into_error());
             }
         }
 
@@ -66,7 +72,7 @@ impl Lexer {
             }
 
             let ch = self.current_char();
-            if !ch.is_alphanumeric() {
+            if !ch.is_alphanumeric() && ch != '+' {
                 break;
             }
 
@@ -167,5 +173,24 @@ mod tests {
         assert!(tokens[4].is_identifier());
         assert!(tokens[5].is_close_round_brace());
         assert!(tokens[6].is_close_round_brace());
+    }
+
+    #[test]
+    fn test_multiple_3() {
+        let input = "Map(String(Ctrl+N), String(OpenPanel))".to_string();
+        let tokens = tokenize_string(input, None).unwrap();
+        assert_eq!(tokens.len(), 12);
+        assert!(tokens[0].is_map());
+        assert!(tokens[1].is_open_round_brace());
+        assert!(tokens[2].is_string());
+        assert!(tokens[3].is_open_round_brace());
+        assert!(tokens[4].is_identifier());
+        assert!(tokens[5].is_close_round_brace());
+        assert!(tokens[6].is_comma());
+        assert!(tokens[7].is_string());
+        assert!(tokens[8].is_open_round_brace());
+        assert!(tokens[9].is_open_panel());
+        assert!(tokens[10].is_close_round_brace());
+        assert!(tokens[11].is_close_round_brace());
     }
 }
