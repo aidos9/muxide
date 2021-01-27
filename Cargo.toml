@@ -5,13 +5,15 @@ authors = ["aidos9 <20310468+aidos9@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
-vt100 = "0.8.1"
+# Until an update is added we can't use the crates.io version  vt100 = "0.8.1"
+vt100 = { path = "vt100-rust" }
 crossterm = "0.19"
 termion = "1.5"
 num-traits = "0.2"
 nix = "0.19"
 libc = "0.2"
 chan-signal = "0.3"
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.1", features = ["full"] }
 futures = { version = "0.3", features = ["bilock", "io-compat", "unstable"]}
 paste = "1.0"
+toml = "0.5"

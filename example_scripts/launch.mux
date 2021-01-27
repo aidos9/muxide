@@ -1,6 +1,0 @@
-OpenPanel()
-Map(String(ctrl+a), OpenPanel)
-
-Action action_name {
-
-}

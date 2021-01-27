@@ -1,0 +1,26 @@
+[package]
+name = "vt100"
+version = "0.8.1"
+authors = ["Jesse Luehrs <doy@tozt.net>"]
+edition = "2018"
+
+description = "Library for parsing terminal data"
+homepage = "https://github.com/doy/vt100-rust"
+repository = "https://github.com/doy/vt100-rust"
+readme = "README.md"
+keywords = ["terminal", "vt100"]
+categories = ["command-line-interface", "encoding"]
+license = "MIT"
+
+[dependencies]
+itoa = "0.4"
+enumset = "1.0"
+log = "0.4"
+unicode-width = "0.1"
+vte = "0.6"
+
+[dev-dependencies]
+quickcheck = "0.9"
+rand = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

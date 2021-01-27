@@ -1,0 +1,15 @@
+[environment]
+launch_command = "fish"
+
+[command_prompt]
+prompt_text = ">"
+enabled = true
+
+[top_border]
+color = "default"
+visible = true
+
+[[keys]]
+key = "ctrl+a"
+command = "OpenPanel"
+args = ["a"]
