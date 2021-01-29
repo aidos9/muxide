@@ -1,26 +1,63 @@
 use crate::channel_controller::ChannelController;
-use crate::config::{Command, Config};
+use crate::command::Command;
+use crate::config::Config;
 use crate::display::Display;
 use crate::error::{Error, ErrorType};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
+use tab_pty_process::{AsyncPtyMaster, AsyncPtyMasterReadHalf, AsyncPtyMasterWriteHalf};
 use termion::event;
 use termion::event::Event;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 use tokio::time::Duration;
 use vt100::Parser;
 
-async fn pty_manager(mut r: Pty, tx: Sender<Vec<u8>>, mut shutdown_rx: Receiver<()>) {
-    let mut buf = vec![0u8; 4096];
+async fn pty_manager(
+    mut p: Pty,
+    tx: Sender<Vec<u8>>,
+    mut shutdown_rx: watch::Receiver<bool>,
+    mut stdin_rx: Receiver<Vec<u8>>,
+) {
+    let (mut r, mut w) = p.split();
 
+    let s_1 = shutdown_rx.clone();
+
+    select! {
+        _ = tokio::spawn(async move {
+        let mut buf = vec![0u8; 4096];
+
+        while let Ok(count) = r.read(&mut buf).await {
+            if count == 0 {
+                if r.running().await == Some(false) {
+                    break;
+                }
+            }
+
+            let mut cpy = vec![0u8; count];
+            cpy.copy_from_slice(&buf[0..count]);
+
+            tx.send(cpy).await;
+
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }) => {}
+    _ = tokio::spawn(async move {
+        while let Some(bytes) = stdin_rx.recv().await {
+            w.write(&bytes).await.unwrap();
+            w.flush().await.unwrap();
+        }
+    }) => {}
+    }
+    /*
     loop {
         select! {
             res = r.read(&mut buf) => {
                 if let Ok(count) = res {
                     if count == 0 {
-                        if r.running() == Some(false) {
+                        if r.running().await == Some(false) {
                             break;
                         }
                     }
@@ -37,11 +74,21 @@ async fn pty_manager(mut r: Pty, tx: Sender<Vec<u8>>, mut shutdown_rx: Receiver<
                 }
             }
 
+            res = stdin_rx.recv() => {
+                if let Some(bytes) = res {
+                    // TODO: This should timeout
+                    w.write_all(&bytes).await.unwrap();
+                } else {
+                    panic!("{:?}", res);
+                    break;
+                }
+            }
+
             _ = shutdown_rx.recv() => {
                 break;
             }
         }
-    }
+    }*/
 }
 
 struct Panel {
@@ -65,7 +112,7 @@ pub struct LogicManager {
 impl LogicManager {
     const SCROLLBACK_LEN: usize = 120;
 
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(config: Config) -> Result<Self, Error> {
         let (connection_manager, stdin_tx) = ChannelController::new();
         let input_manager = InputManager::start(stdin_tx)?;
         let display = match Display::new().init() {
@@ -74,7 +121,7 @@ impl LogicManager {
         };
 
         return Ok(Self {
-            config: Config::new(),
+            config,
             cmd_buffer: Vec::new(),
             selected_panel: None,
             panels: Vec::new(),
@@ -86,10 +133,6 @@ impl LogicManager {
         });
     }
 
-    pub fn process_config_file(&mut self, file: &str) {
-        unimplemented!();
-    }
-
     pub async fn start_event_loop(mut self) {
         self.open_new_panel().unwrap();
 
@@ -99,7 +142,7 @@ impl LogicManager {
             let res = self.connection_manager.wait_for_message().await;
             if let Some(bytes) = res.bytes {
                 if res.id.is_none() {
-                    self.handle_stdin(bytes);
+                    self.handle_stdin(bytes).await;
                 } else {
                     self.handle_panel_output(res.id.unwrap(), bytes);
                 }
@@ -108,17 +151,23 @@ impl LogicManager {
             }
 
             if self.halt_execution {
-                self.shutdown();
+                self.shutdown().await;
                 break;
             }
         }
     }
-    fn handle_stdin(&mut self, bytes: Vec<u8>) {
+
+    async fn handle_stdin(&mut self, bytes: Vec<u8>) {
         if self.shortcut(&bytes) {
             return;
         } else {
             match self.selected_panel {
-                Some(id) => self.panel_with_id(id).unwrap().parser.process(&bytes),
+                Some(id) => {
+                    self.connection_manager
+                        .write_bytes(id, bytes)
+                        .await
+                        .unwrap();
+                }
                 None => self.handle_cmd_input(bytes),
             }
         }
@@ -154,7 +203,9 @@ impl LogicManager {
         }
     }
 
-    fn handle_cmd_input(&mut self, bytes: Vec<u8>) {}
+    fn handle_cmd_input(&mut self, bytes: Vec<u8>) {
+        todo!();
+    }
 
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
         let panel = self.panel_with_id(id).unwrap();
@@ -177,7 +228,7 @@ impl LogicManager {
 
     fn open_new_panel(&mut self) -> Result<(), Error> {
         let id = self.get_next_id();
-        let (tx, shutdown_rx) = self.connection_manager.new_pair(id);
+        let (tx, stdin_rx, shutdown_rx) = self.connection_manager.new_channel(id);
         let pty = Pty::open(self.config.get_panel_init_command())?;
 
         let new_sizes = self.display.open_new_panel(id)?;
@@ -197,7 +248,7 @@ impl LogicManager {
         )?;
 
         tokio::spawn(async move {
-            pty_manager(pty, tx, shutdown_rx).await;
+            pty_manager(pty, tx, shutdown_rx, stdin_rx).await;
         });
 
         self.panels.push(Panel { parser, id });

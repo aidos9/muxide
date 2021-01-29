@@ -59,6 +59,10 @@ pub enum ErrorType {
         description: String,
     },
 
+    PTYWriteError {
+        description: String,
+    },
+
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -127,6 +131,10 @@ impl Error {
 
             ErrorType::ScriptError { description } => {
                 return Self::new_script_error(description);
+            }
+            
+            ErrorType::PTYWriteError { description } => {
+                return Self::new_pty_write_error(description);
             }
         };
     }
@@ -282,6 +290,14 @@ impl Error {
             debug_description: description.clone(),
             description,
             terminate: false,
+        };
+    }
+
+    fn new_pty_write_error(description: String) -> Self {
+        return Self {
+            debug_description: description.clone(),
+            description,
+            terminate: true,
         };
     }
 }

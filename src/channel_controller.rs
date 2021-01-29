@@ -1,12 +1,15 @@
+use crate::error::{Error, ErrorType};
 use futures::FutureExt;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::watch;
 use tokio::time::{self, Duration};
 
-struct ChannelTriple {
+struct Channel {
     id: usize,
     rx: Receiver<Vec<u8>>,
-    tx: Sender<()>,
+    tx: Sender<Vec<u8>>,
+    shutdown_tx: watch::Sender<bool>,
 }
 
 pub struct ControllerResponse {
@@ -16,13 +19,14 @@ pub struct ControllerResponse {
 
 pub struct ChannelController {
     stdin_rx: Receiver<Vec<u8>>,
-    pty_triples: Vec<ChannelTriple>,
+    ptys: Vec<Channel>,
 }
 
 impl ChannelController {
     const SHUTDOWN_BUFFER_SIZE: usize = 5;
     const BUFFER_SIZE: usize = 100;
     const SHUTDOWN_TIMEOUT_MS: u64 = 200;
+    const SEND_TIMEOUT_MS: u64 = 200;
 
     /// Returns self, and the stdin receiver
     pub fn new() -> (Self, Sender<Vec<u8>>) {
@@ -31,55 +35,57 @@ impl ChannelController {
         return (
             Self {
                 stdin_rx: rx,
-                pty_triples: Vec::new(),
+                ptys: Vec::new(),
             },
             tx,
         );
     }
 
-    pub fn new_pair(&mut self, id: usize) -> (Sender<Vec<u8>>, Receiver<()>) {
-        let (tx, rx) = mpsc::channel(Self::BUFFER_SIZE);
-        let (shutdown_tx, shutdown_rx) = mpsc::channel(Self::SHUTDOWN_BUFFER_SIZE);
+    pub fn new_channel(
+        &mut self,
+        id: usize,
+    ) -> (Sender<Vec<u8>>, Receiver<Vec<u8>>, watch::Receiver<bool>) {
+        let (stdout_tx, stdout_rx) = mpsc::channel(Self::BUFFER_SIZE);
+        let (stdin_tx, stdin_rx) = mpsc::channel(Self::BUFFER_SIZE);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-        self.pty_triples.push(ChannelTriple {
+        self.ptys.push(Channel {
             id,
-            rx,
-            tx: shutdown_tx,
+            rx: stdout_rx,
+            tx: stdin_tx,
+            shutdown_tx,
         });
 
-        return (tx, shutdown_rx);
+        return (stdout_tx, stdin_rx, shutdown_rx);
     }
 
     /// Shutdown a pty thread and remove it from the channel controller.
     pub async fn send_shutdown(&mut self, id: usize) {
-        for i in 0..self.pty_triples.len() {
-            if self.pty_triples[i].id == id {
-                let slp = time::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+        for i in 0..self.ptys.len() {
+            if self.ptys[i].id == id {
+                self.ptys[i].shutdown_tx.send(true);
+                std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
 
-                select! {
-                    _ = self.pty_triples[i].tx.send(()) => {}
-                    _ = slp => {}
-                }
-
-                self.pty_triples.remove(i);
+                self.ptys.remove(i);
                 return;
             }
         }
     }
 
     pub async fn shutdown_all(mut self) {
-        let slp = time::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
-        select! {
-            _ = futures::future::join_all(self.pty_triples.iter().map(|trip| trip.tx.send(()))) => {}
-            _ = slp => {}
-        };
+        while self.ptys.len() > 0 {
+            self.ptys[0].shutdown_tx.send(true);
+            std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+
+            self.ptys.remove(0);
+        }
     }
 
     pub async fn wait_for_message(&mut self) -> ControllerResponse {
         let bytes;
         let mut id = None;
 
-        if self.pty_triples.is_empty() {
+        if self.ptys.is_empty() {
             bytes = self.stdin_rx.recv().await;
         } else {
             tokio::select! {
@@ -88,7 +94,7 @@ impl ChannelController {
                 }
 
                 (b, i, _) = futures::future::select_all(
-                self.pty_triples
+                self.ptys
                     .iter_mut()
                     .map(|pair| pair.rx.recv().boxed())) => {
                         bytes = b;
@@ -98,7 +104,7 @@ impl ChannelController {
         }
 
         if let Some(i) = id {
-            id = Some(self.pty_triples[i].id)
+            id = Some(self.ptys[i].id)
         }
 
         if bytes.is_none() {
@@ -106,5 +112,31 @@ impl ChannelController {
         }
 
         return ControllerResponse { bytes, id };
+    }
+
+    pub async fn write_bytes(&mut self, id: usize, bytes: Vec<u8>) -> Result<(), Error> {
+        for channel in &mut self.ptys {
+            if channel.id == id {
+                let slp = time::sleep(Duration::from_millis(Self::SEND_TIMEOUT_MS));
+
+                select! {
+                    res = channel.tx.send(bytes) => {
+                        if let Err(e) = res {
+                            return Err(ErrorType::PTYWriteError { description: format!("Error while sending stdin. Error: {}", e)}.into_error());
+                        }
+                    }
+                    _ = slp => {
+                        return Err(ErrorType::PTYWriteError { description: String::from("Timout while sending stdin.")}.into_error());
+                    }
+                }
+
+                return Ok(());
+            }
+        }
+
+        return Err(ErrorType::PTYWriteError {
+            description: format!("No panel with the id: {}", id),
+        }
+        .into_error());
     }
 }

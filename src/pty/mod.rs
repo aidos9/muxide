@@ -3,21 +3,32 @@ This code was heavily based and inspired by https://github.com/pkgw/stund/blob/m
 */
 
 use crate::error::{Error, ErrorType};
+use futures::lock::BiLock;
+use futures::ready;
 use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::Winsize;
 use nix::{fcntl, unistd};
+use std::fs::OpenOptions;
 use std::io;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::process::Stdio;
 use std::task::Context;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::macros::support::{Pin, Poll};
 use tokio::process::Command;
 
 pub struct Pty {
     file: File,
     handle: tokio::process::Child,
+}
+
+pub struct PtyRead {
+    file: BiLock<Pty>,
+}
+
+pub struct PtyWrite {
+    file: BiLock<Pty>,
 }
 
 // pub struct PtyRead(BiLock<File>);
@@ -148,18 +159,17 @@ impl Pty {
             Err(_) => return None,
         }
     }
-}
 
-// impl AsyncRead for PtyRead {
-//     fn poll_read(
-//         self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//         buf: &mut ReadBuf<'_>,
-//     ) -> Poll<io::Result<()>> {
-//         let mut l = ready!(self.0.poll_lock(cx));
-//         return l.as_pin_mut().poll_read(cx, buf);
-//     }
-// }
+    pub fn split(self) -> (PtyRead, PtyWrite) {
+        let (read, write) = BiLock::new(self);
+
+        return (PtyRead::new(read), PtyWrite::new(write));
+    }
+
+    // pub async fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), io::Error> {
+    //     return self.write_file.write_all(bytes).await;
+    // }
+}
 
 impl AsyncRead for Pty {
     fn poll_read(
@@ -168,5 +178,77 @@ impl AsyncRead for Pty {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         return Pin::new(&mut self.file).poll_read(cx, buf);
+    }
+}
+
+impl AsyncWrite for Pty {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        return AsyncWrite::poll_write(Pin::new(&mut self.file), cx, buf);
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        return AsyncWrite::poll_flush(Pin::new(&mut self.file), cx);
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        return AsyncWrite::poll_shutdown(Pin::new(&mut self.file), cx);
+    }
+}
+
+impl PtyRead {
+    pub fn new(bilock: BiLock<Pty>) -> Self {
+        return Self { file: bilock };
+    }
+
+    pub async fn running(&self) -> Option<bool> {
+        return self.file.lock().await.running();
+    }
+}
+
+impl AsyncRead for PtyRead {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let mut l = ready!(self.file.poll_lock(cx));
+        return l.as_pin_mut().poll_read(cx, buf);
+    }
+}
+
+impl PtyWrite {
+    pub fn new(bilock: BiLock<Pty>) -> Self {
+        return Self { file: bilock };
+    }
+}
+
+impl AsyncWrite for PtyWrite {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        let mut l = ready!(self.file.poll_lock(cx));
+        return l.as_pin_mut().poll_write(cx, buf);
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        let mut l = ready!(self.file.poll_lock(cx));
+        return l.as_pin_mut().poll_flush(cx);
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        let mut l = ready!(self.file.poll_lock(cx));
+        return l.as_pin_mut().poll_shutdown(cx);
     }
 }
