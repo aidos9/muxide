@@ -5,15 +5,18 @@ use crate::display::Display;
 use crate::error::{Error, ErrorType};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
-use tab_pty_process::{AsyncPtyMaster, AsyncPtyMasterReadHalf, AsyncPtyMasterWriteHalf};
+use std::os::unix::io::AsRawFd;
 use termion::event;
 use termion::event::Event;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use vt100::Parser;
+
+use nix::poll;
 
 async fn pty_manager(
     mut p: Pty,
@@ -21,43 +24,52 @@ async fn pty_manager(
     mut shutdown_rx: watch::Receiver<bool>,
     mut stdin_rx: Receiver<Vec<u8>>,
 ) {
-    let (mut r, mut w) = p.split();
+    //let mut buf = vec![0u8; 4096];
+    let mut pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
 
-    let s_1 = shutdown_rx.clone();
-
-    select! {
-        _ = tokio::spawn(async move {
-        let mut buf = vec![0u8; 4096];
-
-        while let Ok(count) = r.read(&mut buf).await {
-            if count == 0 {
-                if r.running().await == Some(false) {
-                    break;
-                }
-            }
-
-            let mut cpy = vec![0u8; count];
-            cpy.copy_from_slice(&buf[0..count]);
-
-            tx.send(cpy).await;
-
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    }) => {}
-    _ = tokio::spawn(async move {
-        while let Some(bytes) = stdin_rx.recv().await {
-            w.write(&bytes).await.unwrap();
-            w.flush().await.unwrap();
-        }
-    }) => {}
-    }
-    /*
     loop {
         select! {
-            res = r.read(&mut buf) => {
+            b = tokio::spawn(async move {
+                let timeout_ms = 100;
+
+                let mut res = false;
+
+                loop {
+                    if poll::poll(&mut [pfd], timeout_ms).unwrap() != 0 {
+                        res = true;
+                        break;
+                    }
+                }
+
+                res
+            }) => {
+                if !b.unwrap() {
+                    continue;
+                }
+                    let mut buf = vec![0u8; 4096];
+                    let res = p.file().read(&mut buf).await;
+                    if let Ok(count) = res {
+                        if count == 0 {
+                            if p.running() == Some(false) {
+                                break;
+                            }
+                        }
+
+                        let mut cpy = vec![0u8; count];
+                        cpy.copy_from_slice(&buf[0..count]);
+
+                        tx.send(cpy).await;
+
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    } else {
+                        panic!("{:?}", res);
+                        break;
+                    }
+            },
+            /*res = p.read(&mut buf) => {
                 if let Ok(count) = res {
                     if count == 0 {
-                        if r.running().await == Some(false) {
+                        if p.running() == Some(false) {
                             break;
                         }
                     }
@@ -72,23 +84,21 @@ async fn pty_manager(
                     panic!("{:?}", res);
                     break;
                 }
-            }
-
+            }*/
             res = stdin_rx.recv() => {
                 if let Some(bytes) = res {
                     // TODO: This should timeout
-                    w.write_all(&bytes).await.unwrap();
+                    p.file().write_all(&bytes).await.unwrap();
                 } else {
                     panic!("{:?}", res);
                     break;
                 }
             }
-
-            _ = shutdown_rx.recv() => {
+            _ = shutdown_rx.changed() => {
                 break;
             }
         }
-    }*/
+    }
 }
 
 struct Panel {
@@ -107,6 +117,7 @@ pub struct LogicManager {
     display: Display,
     next_panel_id: usize,
     halt_execution: bool,
+    close_handles: Vec<JoinHandle<()>>,
 }
 
 impl LogicManager {
@@ -130,6 +141,7 @@ impl LogicManager {
             display,
             next_panel_id: 0,
             halt_execution: false,
+            close_handles: Vec::new(),
         });
     }
 
@@ -247,10 +259,11 @@ impl LogicManager {
                 .collect(),
         )?;
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             pty_manager(pty, tx, shutdown_rx, stdin_rx).await;
         });
 
+        self.close_handles.push(handle);
         self.panels.push(Panel { parser, id });
         self.select_panel(Some(id));
 
@@ -275,6 +288,7 @@ impl LogicManager {
 
     async fn shutdown(self) {
         self.connection_manager.shutdown_all().await;
+        //self.close_handles.pop().unwrap().await;
     }
 
     fn select_panel(&mut self, id: Option<usize>) {
