@@ -1,4 +1,4 @@
-use crate::{Error, ErrorType};
+use crate::{ErrorType, MuxideError};
 use std::io::{ErrorKind, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ impl InputManager {
 
     /// Attempt to create a new IOManager instance. This will start a new thread that will read
     /// from the Stdin and send the information through the sender instance supplied.
-    pub fn start(sender: Sender<Vec<u8>>) -> Result<Self, Error> {
+    pub fn start(sender: Sender<Vec<u8>>) -> Result<Self, MuxideError> {
         let mut val = Self {
             running: Arc::new(AtomicBool::new(false)),
         };
@@ -26,7 +26,7 @@ impl InputManager {
         return val.start_internal(sender).map(|_| val);
     }
 
-    fn start_internal(&mut self, sender: Sender<Vec<u8>>) -> Result<(), Error> {
+    fn start_internal(&mut self, sender: Sender<Vec<u8>>) -> Result<(), MuxideError> {
         // Ensure this method hasn't been called more than once
         if self.is_running() {
             return Err(ErrorType::InputManagerRunningError.into_error());

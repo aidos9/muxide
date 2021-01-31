@@ -92,6 +92,13 @@ impl Config {
     pub fn from_toml_string(toml: &str) -> Result<Self, String> {
         return toml::from_str(toml).map_err(|e| e.to_string());
     }
+
+    pub fn default_path() -> Option<String> {
+        let mut path = dirs::home_dir()?;
+        path.push(".config/muxide/config.toml");
+
+        return path.to_str().map(|s| s.to_string());
+    }
 }
 
 impl Default for Config {

@@ -2,7 +2,7 @@
 This code was heavily based and inspired by https://github.com/pkgw/stund/blob/master/tokio-pty-process/
 */
 
-use crate::error::{Error, ErrorType};
+use crate::error::{ErrorType, MuxideError};
 use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::Winsize;
 use nix::{fcntl, unistd};
@@ -22,7 +22,7 @@ pub struct Pty {
 }
 
 impl Pty {
-    pub fn open(cmd: &str) -> Result<Self, Error> {
+    pub fn open(cmd: &str) -> Result<Self, MuxideError> {
         // Comment taken directly from: https://github.com/pkgw/stund/blob/master/tokio-pty-process/src/lib.rs
         // On MacOS, O_NONBLOCK is not documented as an allowed option to
         // posix_openpt(), but it is in fact allowed and functional, and
@@ -101,7 +101,7 @@ impl Pty {
         return Ok(());
     }
 
-    fn open_pty() -> Result<(RawFd, RawFd), Error> {
+    fn open_pty() -> Result<(RawFd, RawFd), MuxideError> {
         let res = nix::pty::openpty(
             Some(&Winsize {
                 ws_row: 24,

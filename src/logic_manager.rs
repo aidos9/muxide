@@ -2,7 +2,7 @@ use crate::channel_controller::ChannelController;
 use crate::command::Command;
 use crate::config::Config;
 use crate::display::Display;
-use crate::error::{Error, ErrorType};
+use crate::error::{ErrorType, MuxideError};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
 use std::os::unix::io::AsRawFd;
@@ -18,7 +18,7 @@ use vt100::Parser;
 
 use nix::poll;
 
-/// This method runs a pty, handling shutdown messages, stdin and stdou.
+/// This method runs a pty, handling shutdown messages, stdin and stdout.
 /// It should be spawned in a thread.
 async fn pty_manager(
     mut p: Pty,
@@ -108,7 +108,7 @@ pub struct LogicManager {
 impl LogicManager {
     const SCROLLBACK_LEN: usize = 120;
 
-    pub fn new(config: Config) -> Result<Self, Error> {
+    pub fn new(config: Config) -> Result<Self, MuxideError> {
         let (connection_manager, stdin_tx) = ChannelController::new();
         let input_manager = InputManager::start(stdin_tx)?;
         let display = match Display::new().init() {
@@ -201,7 +201,21 @@ impl LogicManager {
     }
 
     fn handle_cmd_input(&mut self, bytes: Vec<u8>) {
-        todo!();
+        for b in bytes {
+            if b == b'\n' {
+                todo!();
+                //self.process_command();
+                self.cmd_buffer.clear();
+            } else if b == 127 {
+                self.display.sub_cmd_offset(1);
+            } else {
+                self.cmd_buffer.push(b as char);
+                self.display.add_cmd_offset(1);
+            }
+        }
+
+        self.display
+            .set_cmd_content(self.cmd_buffer.iter().collect());
     }
 
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
@@ -223,7 +237,7 @@ impl LogicManager {
             .update_panel_cursor(id, curs_col, curs_row, cursor_hidden);
     }
 
-    fn open_new_panel(&mut self) -> Result<(), Error> {
+    fn open_new_panel(&mut self) -> Result<(), MuxideError> {
         let id = self.get_next_id();
         let (tx, stdin_rx, shutdown_rx) = self.connection_manager.new_channel(id);
         let pty = Pty::open(self.config.get_panel_init_command())?;

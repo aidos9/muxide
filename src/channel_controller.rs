@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorType};
+use crate::error::{ErrorType, MuxideError};
 use futures::FutureExt;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -119,7 +119,7 @@ impl ChannelController {
         return ControllerResponse { bytes, id };
     }
 
-    pub async fn write_bytes(&mut self, id: usize, bytes: Vec<u8>) -> Result<(), Error> {
+    pub async fn write_bytes(&mut self, id: usize, bytes: Vec<u8>) -> Result<(), MuxideError> {
         for channel in &mut self.ptys {
             if channel.id == id {
                 let slp = time::sleep(Duration::from_millis(Self::SEND_TIMEOUT_MS));

@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorType};
+use crate::error::{ErrorType, MuxideError};
 use crate::geometry::{Point, Size};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
@@ -111,7 +111,11 @@ impl Display {
 
     /// Set the contents of a panel
     /// Error: If no panel exists with the specified id, or if init has not been run
-    pub fn update_panel_content(&mut self, id: usize, content: Vec<Vec<u8>>) -> Result<(), Error> {
+    pub fn update_panel_content(
+        &mut self,
+        id: usize,
+        content: Vec<Vec<u8>>,
+    ) -> Result<(), MuxideError> {
         if !self.completed_initialization {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
@@ -126,10 +130,26 @@ impl Display {
         return Err(ErrorType::NoPanelWithIDError { id }.into_error());
     }
 
+    pub fn set_cmd_content(&mut self, content: String) {
+        self.prompt_content = content;
+    }
+
+    pub fn set_cmd_offset(&mut self, offset: u16) {
+        self.prompt_cursor_offset = offset;
+    }
+
+    pub fn add_cmd_offset(&mut self, offset: u16) {
+        self.prompt_cursor_offset += offset;
+    }
+
+    pub fn sub_cmd_offset(&mut self, offset: u16) {
+        self.prompt_cursor_offset -= offset;
+    }
+
     /// Opens a new panel giving it the specified id. The id should be unique but it is
     /// not enforced by this method. The method will return a vector of all the changed panels
     /// id's and new size.
-    pub fn open_new_panel(&mut self, id: usize) -> Result<Vec<(usize, Size)>, Error> {
+    pub fn open_new_panel(&mut self, id: usize) -> Result<Vec<(usize, Size)>, MuxideError> {
         if !self.completed_initialization {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
@@ -184,7 +204,7 @@ impl Display {
         return panel;
     }
 
-    pub fn render(&mut self) -> Result<(), Error> {
+    pub fn render(&mut self) -> Result<(), MuxideError> {
         if !self.completed_initialization {
             return Ok(());
         }
@@ -287,7 +307,7 @@ impl Display {
         })?);
     }
 
-    fn get_terminal_size() -> Result<Size, Error> {
+    fn get_terminal_size() -> Result<Size, MuxideError> {
         let (cols, rows) = match terminal::size() {
             Ok(t) => t,
             Err(e) => {
@@ -302,7 +322,7 @@ impl Display {
     }
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
-    fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), Error> {
+    fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), MuxideError> {
         match &self.selected_panel {
             Some(panel) => {
                 let loc = panel.get_cursor_position();
@@ -339,7 +359,7 @@ impl Display {
                     stdout,
                     cursor::Show,
                     cursor::MoveTo(
-                        Self::PROMPT_STRING.len() as u16 + 1,
+                        Self::PROMPT_STRING.len() as u16 + 1 + self.prompt_cursor_offset,
                         terminal_size.get_rows() - 2
                     ) // Column, row
                 )
@@ -356,7 +376,11 @@ impl Display {
     }
 
     /// Queues the outer border for display in stdout
-    fn queue_main_borders(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), Error> {
+    fn queue_main_borders(
+        &self,
+        stdout: &mut Stdout,
+        terminal_size: &Size,
+    ) -> Result<(), MuxideError> {
         // Print the top row
         queue!(
             stdout,
@@ -454,7 +478,7 @@ impl Display {
         stdout: &mut Stdout,
         terminal_size: &Size,
         col: u16,
-    ) -> Result<(), Error> {
+    ) -> Result<(), MuxideError> {
         for r in 1..terminal_size.get_rows() - 3 {
             queue!(
                 stdout,

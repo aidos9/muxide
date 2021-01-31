@@ -1,3 +1,5 @@
+use std::error::Error;
+
 #[derive(Clone, PartialEq, Debug, Hash)]
 pub enum ErrorType {
     IOCTLError {
@@ -68,18 +70,18 @@ pub enum ErrorType {
 }
 
 #[derive(Clone, PartialEq, Hash)]
-pub struct Error {
+pub struct MuxideError {
     debug_description: String,
     description: String,
     terminate: bool,
 }
 
 impl ErrorType {
-    pub fn into_error(self) -> Error {
-        return Error::new(self);
+    pub fn into_error(self) -> MuxideError {
+        return MuxideError::new(self);
     }
 
-    pub fn new_display_qe_error(io_error: std::io::Error) -> Error {
+    pub fn new_display_qe_error(io_error: std::io::Error) -> MuxideError {
         return Self::QueueExecuteError {
             reason: io_error.to_string(),
         }
@@ -87,7 +89,7 @@ impl ErrorType {
     }
 }
 
-impl Error {
+impl MuxideError {
     pub fn new(tp: ErrorType) -> Self {
         return match tp {
             ErrorType::IOCTLError { code, outcome } => Self::new_ioctl_error(code, outcome),
@@ -132,7 +134,7 @@ impl Error {
             ErrorType::ScriptError { description } => {
                 return Self::new_script_error(description);
             }
-            
+
             ErrorType::PTYWriteError { description } => {
                 return Self::new_pty_write_error(description);
             }
@@ -302,14 +304,16 @@ impl Error {
     }
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for MuxideError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return write!(f, "{}", self.description);
     }
 }
 
-impl std::fmt::Debug for Error {
+impl std::fmt::Debug for MuxideError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return write!(f, "{}", self.debug_description);
     }
 }
+
+impl Error for MuxideError {}
