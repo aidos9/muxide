@@ -3,18 +3,15 @@ This code was heavily based and inspired by https://github.com/pkgw/stund/blob/m
 */
 
 use crate::error::{Error, ErrorType};
-use futures::lock::BiLock;
-use futures::ready;
 use nix::fcntl::{FcntlArg, OFlag};
 use nix::pty::Winsize;
 use nix::{fcntl, unistd};
-use std::fs::OpenOptions;
 use std::io;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::process::Stdio;
 use std::task::Context;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 use tokio::macros::support::{Pin, Poll};
 use tokio::process::Command;
 

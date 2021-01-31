@@ -23,7 +23,6 @@ pub struct ChannelController {
 }
 
 impl ChannelController {
-    const SHUTDOWN_BUFFER_SIZE: usize = 5;
     const BUFFER_SIZE: usize = 100;
     const SHUTDOWN_TIMEOUT_MS: u64 = 200;
     const SEND_TIMEOUT_MS: u64 = 200;
@@ -63,8 +62,11 @@ impl ChannelController {
     pub async fn send_shutdown(&mut self, id: usize) {
         for i in 0..self.ptys.len() {
             if self.ptys[i].id == id {
-                self.ptys[i].shutdown_tx.send(true);
-                std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+                // Try to shutdown, if this fails then we just exit.
+                if self.ptys[i].shutdown_tx.send(true).is_ok() {
+                    // Give the thread a chance to shutdown.
+                    std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+                }
 
                 self.ptys.remove(i);
                 return;
@@ -74,8 +76,11 @@ impl ChannelController {
 
     pub async fn shutdown_all(mut self) {
         while self.ptys.len() > 0 {
-            self.ptys[0].shutdown_tx.send(true);
-            std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+            // Try to shutdown, if this fails then we just exit.
+            if self.ptys[0].shutdown_tx.send(true).is_ok() {
+                // Give the thread a chance to shutdown.
+                std::thread::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
+            }
 
             self.ptys.remove(0);
         }

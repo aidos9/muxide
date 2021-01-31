@@ -1,9 +1,7 @@
 use super::BorderColor;
 use super::Keys;
-
 use serde::Deserialize;
 use std::time::Duration;
-use toml::Value;
 
 fn serde_default_as_true() -> bool {
     true

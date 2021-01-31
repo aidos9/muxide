@@ -18,14 +18,16 @@ use vt100::Parser;
 
 use nix::poll;
 
+/// This method runs a pty, handling shutdown messages, stdin and stdou.
+/// It should be spawned in a thread.
 async fn pty_manager(
     mut p: Pty,
     tx: Sender<Vec<u8>>,
     mut shutdown_rx: watch::Receiver<bool>,
     mut stdin_rx: Receiver<Vec<u8>>,
 ) {
-    //let mut buf = vec![0u8; 4096];
-    let mut pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
+    //TODO: Better error handling
+    let pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
 
     loop {
         select! {
@@ -66,25 +68,6 @@ async fn pty_manager(
                         break;
                     }
             },
-            /*res = p.read(&mut buf) => {
-                if let Ok(count) = res {
-                    if count == 0 {
-                        if p.running() == Some(false) {
-                            break;
-                        }
-                    }
-
-                    let mut cpy = vec![0u8; count];
-                    cpy.copy_from_slice(&buf[0..count]);
-
-                    tx.send(cpy).await;
-
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                } else {
-                    panic!("{:?}", res);
-                    break;
-                }
-            }*/
             res = stdin_rx.recv() => {
                 if let Some(bytes) = res {
                     // TODO: This should timeout
@@ -101,6 +84,8 @@ async fn pty_manager(
     }
 }
 
+/// Represents a panel, i.e. the output for a process. It tracks the contents being
+/// displayed and assigns an id.
 struct Panel {
     parser: Parser,
     id: usize,
