@@ -1,4 +1,5 @@
 use termion::event::Key;
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Command {
     FocusCommandPromptCommand,

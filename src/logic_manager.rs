@@ -1,43 +1,38 @@
-use crate::channel_controller::ChannelController;
+use crate::channel_controller::{ChannelController, Message};
 use crate::command::Command;
 use crate::config::Config;
 use crate::display::Display;
 use crate::error::{ErrorType, MuxideError};
+use crate::geometry::Size;
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
+use either::Either;
+use nix::poll;
 use std::os::unix::io::AsRawFd;
 use termion::event;
-use termion::event::Event;
+use termion::event::{Event, Key};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use vt100::Parser;
 
-use nix::poll;
+const POLL_TIMEOUT_MS: i32 = 100;
 
 /// This method runs a pty, handling shutdown messages, stdin and stdout.
 /// It should be spawned in a thread.
-async fn pty_manager(
-    mut p: Pty,
-    tx: Sender<Vec<u8>>,
-    mut shutdown_rx: watch::Receiver<bool>,
-    mut stdin_rx: Receiver<Vec<u8>>,
-) {
+async fn pty_manager(mut p: Pty, tx: Sender<Vec<u8>>, mut stdin_rx: Receiver<Message>) {
     //TODO: Better error handling
     let pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
 
     loop {
         select! {
             b = tokio::spawn(async move {
-                let timeout_ms = 100;
-
                 let mut res = false;
 
                 loop {
-                    if poll::poll(&mut [pfd], timeout_ms).unwrap() != 0 {
+                    if poll::poll(&mut [pfd], POLL_TIMEOUT_MS).unwrap() != 0 {
                         res = true;
                         break;
                     }
@@ -48,37 +43,47 @@ async fn pty_manager(
                 if !b.unwrap() {
                     continue;
                 }
-                    let mut buf = vec![0u8; 4096];
-                    let res = p.file().read(&mut buf).await;
-                    if let Ok(count) = res {
-                        if count == 0 {
-                            if p.running() == Some(false) {
-                                break;
-                            }
+
+                let mut buf = vec![0u8; 4096];
+                let res = p.file().read(&mut buf).await;
+
+                if let Ok(count) = res {
+                    if count == 0 {
+                        if p.running() == Some(false) {
+                            break;
                         }
-
-                        let mut cpy = vec![0u8; count];
-                        cpy.copy_from_slice(&buf[0..count]);
-
-                        tx.send(cpy).await;
-
-                        tokio::time::sleep(Duration::from_millis(5)).await;
-                    } else {
-                        panic!("{:?}", res);
-                        break;
                     }
-            },
-            res = stdin_rx.recv() => {
-                if let Some(bytes) = res {
-                    // TODO: This should timeout
-                    p.file().write_all(&bytes).await.unwrap();
+
+                    let mut cpy = vec![0u8; count];
+                    cpy.copy_from_slice(&buf[0..count]);
+
+                    tx.send(cpy).await.unwrap();
+
+                    tokio::time::sleep(Duration::from_millis(5)).await;
                 } else {
                     panic!("{:?}", res);
                     break;
                 }
-            }
-            _ = shutdown_rx.changed() => {
-                break;
+            },
+            res = stdin_rx.recv() => {
+                if let Some(message) = res {
+                    match message {
+                        Message::Bytes(bytes) => {
+                            // TODO: This should timeout
+
+                            p.file().write_all(&bytes).await.unwrap();
+                        },
+                        Message::Resize(size) => {
+                            p.resize(&size).unwrap();
+                        },
+                        Message::Shutdown => {
+                            break;
+                        }
+                    }
+                } else {
+                    panic!("{:?}", res);
+                    break;
+                }
             }
         }
     }
@@ -91,7 +96,8 @@ struct Panel {
     id: usize,
 }
 
-/// Handles a majority of command parsing and config logic
+/// Handles a majority of the overall application logic, i.e. receiving stdin input and the panel
+/// outputs, managing the display and executing most commands.
 pub struct LogicManager {
     config: Config,
     cmd_buffer: Vec<char>,
@@ -102,13 +108,17 @@ pub struct LogicManager {
     display: Display,
     next_panel_id: usize,
     halt_execution: bool,
-    close_handles: Vec<JoinHandle<()>>,
+    close_handles: Vec<(usize, JoinHandle<()>)>,
 }
 
 impl LogicManager {
+    /// The length of the scrollback history we track for each panel.
     const SCROLLBACK_LEN: usize = 120;
 
+    /// Create a new instance of the logic manager from a config file.
     pub fn new(config: Config) -> Result<Self, MuxideError> {
+        // Create a new channel controller with a stdin transmitter which we will use in the input
+        // manager to send stdin input to the channel controller
         let (connection_manager, stdin_tx) = ChannelController::new();
         let input_manager = InputManager::start(stdin_tx)?;
         let display = match Display::new().init() {
@@ -130,21 +140,28 @@ impl LogicManager {
         });
     }
 
+    /// Start the main event loop, essentially the main application logic.
     pub async fn start_event_loop(mut self) {
-        self.open_new_panel().unwrap();
-
         loop {
             self.display.render().unwrap();
 
             let res = self.connection_manager.wait_for_message().await;
-            if let Some(bytes) = res.bytes {
-                if res.id.is_none() {
-                    self.handle_stdin(bytes).await;
-                } else {
-                    self.handle_panel_output(res.id.unwrap(), bytes);
+
+            match res {
+                Either::Left(res) => {
+                    if res.id.is_none() {
+                        self.handle_stdin(res.bytes).await;
+                    } else {
+                        self.handle_panel_output(res.id.unwrap(), res.bytes);
+                    }
                 }
-            } else {
-                break;
+                Either::Right(id) => {
+                    if id.is_none() {
+                        panic!("The stdin thread has closed. An unknown error occurred.");
+                    } else {
+                        self.remove_panel(id.unwrap());
+                    }
+                }
             }
 
             if self.halt_execution {
@@ -155,7 +172,19 @@ impl LogicManager {
     }
 
     async fn handle_stdin(&mut self, bytes: Vec<u8>) {
-        if self.shortcut(&bytes) {
+        if bytes.is_empty() {
+            return;
+        }
+
+        let event = match event::parse_event(
+            *bytes.first().unwrap(),
+            &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b)),
+        ) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        if self.shortcut(&event) {
             return;
         } else {
             match self.selected_panel {
@@ -165,29 +194,17 @@ impl LogicManager {
                         .await
                         .unwrap();
                 }
-                None => self.handle_cmd_input(bytes),
+                None => self.handle_cmd_input(event),
             }
         }
     }
 
-    fn shortcut(&mut self, bytes: &Vec<u8>) -> bool {
-        if bytes.len() == 0 {
-            return false;
-        }
-
-        let event = match event::parse_event(
-            *bytes.first().unwrap(),
-            &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b)),
-        ) {
-            Ok(e) => e,
-            Err(_) => return false,
-        };
-
+    fn shortcut(&mut self, event: &Event) -> bool {
         if let Event::Key(k) = event {
             if let Some(k) = self
                 .config
                 .key_map()
-                .command_for_key(&k)
+                .command_for_key(k)
                 .map(|cmd| cmd.clone())
             {
                 self.execute_command(&k);
@@ -200,22 +217,24 @@ impl LogicManager {
         }
     }
 
-    fn handle_cmd_input(&mut self, bytes: Vec<u8>) {
-        for b in bytes {
-            if b == b'\n' {
-                todo!();
+    /// Handles input that is intended for the command prompt
+    fn handle_cmd_input(&mut self, event: Event) {
+        if let Event::Key(key) = event {
+            if key == Key::Char('\n') {
                 //self.process_command();
                 self.cmd_buffer.clear();
-            } else if b == 127 {
+                self.display.set_cmd_offset(0);
+            } else if key == Key::Backspace && !self.cmd_buffer.is_empty() {
+                self.cmd_buffer.pop();
                 self.display.sub_cmd_offset(1);
-            } else {
-                self.cmd_buffer.push(b as char);
+            } else if let Key::Char(ch) = key {
+                self.cmd_buffer.push(ch);
                 self.display.add_cmd_offset(1);
             }
-        }
 
-        self.display
-            .set_cmd_content(self.cmd_buffer.iter().collect());
+            self.display
+                .set_cmd_content(self.cmd_buffer.iter().collect());
+        }
     }
 
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
@@ -239,11 +258,11 @@ impl LogicManager {
 
     fn open_new_panel(&mut self) -> Result<(), MuxideError> {
         let id = self.get_next_id();
-        let (tx, stdin_rx, shutdown_rx) = self.connection_manager.new_channel(id);
+        let (tx, stdin_rx) = self.connection_manager.new_channel(id);
         let pty = Pty::open(self.config.get_panel_init_command())?;
 
-        let new_sizes = self.display.open_new_panel(id)?;
-        let new_panel_size = new_sizes.last().unwrap().1;
+        let mut new_sizes = self.display.open_new_panel(id)?;
+        let new_panel_size = new_sizes.pop().unwrap().1;
         let parser = Parser::new(
             new_panel_size.get_rows(),
             new_panel_size.get_cols(),
@@ -258,13 +277,43 @@ impl LogicManager {
                 .collect(),
         )?;
 
+        // Create a separate thread for interfacing with the new pty.
         let handle = tokio::spawn(async move {
-            pty_manager(pty, tx, shutdown_rx, stdin_rx).await;
+            pty_manager(pty, tx, stdin_rx).await;
         });
 
-        self.close_handles.push(handle);
+        self.close_handles.push((id, handle));
         self.panels.push(Panel { parser, id });
         self.select_panel(Some(id));
+        futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+
+        return Ok(());
+    }
+
+    fn remove_panel(&mut self, id: usize) -> Result<(), MuxideError> {
+        let mut new_sizes = self.display.close_panel(id)?;
+
+        for i in 0..self.close_handles.len() {
+            if self.close_handles[i].0 == id {
+                self.close_handles.remove(i);
+                break;
+            }
+        }
+
+        if let Some(sel_id) = self.selected_panel {
+            if sel_id == id {
+                self.select_panel(None);
+            }
+        }
+
+        for i in 0..self.panels.len() {
+            if self.panels[i].id == id {
+                self.panels.remove(i);
+                break;
+            }
+        }
+
+        futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
         return Ok(());
     }
@@ -281,8 +330,34 @@ impl LogicManager {
                     self.select_panel(self.panels.first().map(|p| p.id));
                 }
             }
+            Command::OpenPanelCommand => {
+                self.open_new_panel().unwrap();
+            }
             _ => unimplemented!(),
         }
+    }
+
+    async fn resize_panels(&mut self, panels: Vec<(usize, Size)>) -> Result<(), MuxideError> {
+        for (id, size) in panels {
+            let mut ok = false;
+
+            for panel in &mut self.panels {
+                if panel.id == id {
+                    ok = true;
+
+                    panel.parser.set_size(size.get_rows(), size.get_cols());
+                    break;
+                }
+            }
+
+            if !ok {
+                return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+            }
+
+            self.connection_manager.write_resize(id, size).await?;
+        }
+
+        return Ok(());
     }
 
     async fn shutdown(self) {
