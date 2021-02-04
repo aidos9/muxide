@@ -159,7 +159,7 @@ impl LogicManager {
                     if id.is_none() {
                         panic!("The stdin thread has closed. An unknown error occurred.");
                     } else {
-                        self.remove_panel(id.unwrap());
+                        self.remove_panel(id.unwrap()).unwrap();
                     }
                 }
             }
@@ -194,7 +194,7 @@ impl LogicManager {
                         .await
                         .unwrap();
                 }
-                None => self.handle_cmd_input(event),
+                None => self.handle_cmd_input(event).unwrap(),
             }
         }
     }
@@ -218,10 +218,10 @@ impl LogicManager {
     }
 
     /// Handles input that is intended for the command prompt
-    fn handle_cmd_input(&mut self, event: Event) {
+    fn handle_cmd_input(&mut self, event: Event) -> Result<(), MuxideError> {
         if let Event::Key(key) = event {
             if key == Key::Char('\n') {
-                //self.process_command();
+                self.execute_command(&self.process_command()?);
                 self.cmd_buffer.clear();
                 self.display.set_cmd_offset(0);
             } else if key == Key::Backspace && !self.cmd_buffer.is_empty() {
@@ -235,6 +235,8 @@ impl LogicManager {
             self.display
                 .set_cmd_content(self.cmd_buffer.iter().collect());
         }
+
+        return Ok(());
     }
 
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
@@ -291,7 +293,7 @@ impl LogicManager {
     }
 
     fn remove_panel(&mut self, id: usize) -> Result<(), MuxideError> {
-        let mut new_sizes = self.display.close_panel(id)?;
+        let new_sizes = self.display.close_panel(id)?;
 
         for i in 0..self.close_handles.len() {
             if self.close_handles[i].0 == id {
@@ -316,6 +318,35 @@ impl LogicManager {
         futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
         return Ok(());
+    }
+
+    fn process_command(&self) -> Result<Command, MuxideError> {
+        let mut command_name = Vec::new();
+        let mut args = Vec::new();
+
+        for ch in &self.cmd_buffer {
+            if ch.is_whitespace() {
+                break;
+            } else {
+                command_name.push(*ch);
+            }
+        }
+
+        let mut current_arg = Vec::new();
+
+        for i in command_name.len()..self.cmd_buffer.len() {
+            if self.cmd_buffer[i].is_whitespace() {
+                args.push(current_arg.into_iter().collect());
+                current_arg = Vec::new();
+            } else {
+                current_arg.push(self.cmd_buffer[i]);
+            }
+        }
+
+        let command_name: String = command_name.into_iter().collect();
+
+        return Command::try_from_string(command_name, args)
+            .map_err(|description| ErrorType::CommandError { description }.into_error());
     }
 
     fn execute_command(&mut self, cmd: &Command) {

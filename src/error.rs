@@ -65,6 +65,10 @@ pub enum ErrorType {
         description: String,
     },
 
+    CommandError {
+        description: String,
+    },
+
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -137,6 +141,10 @@ impl MuxideError {
 
             ErrorType::PTYWriteError { description } => {
                 return Self::new_pty_write_error(description);
+            }
+
+            ErrorType::CommandError { description } => {
+                return Self::new_command_error(description);
             }
         };
     }
@@ -300,6 +308,14 @@ impl MuxideError {
             debug_description: description.clone(),
             description,
             terminate: true,
+        };
+    }
+
+    fn new_command_error(description: String) -> Self {
+        return Self {
+            debug_description: description.clone(),
+            description,
+            terminate: false,
         };
     }
 }

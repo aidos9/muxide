@@ -76,7 +76,7 @@ impl Default for Keys {
             map: HashMap::new(),
         };
 
-        n.map.insert(Key::Ctrl('p'), Command::ToggleInputCommand);
+        n.map.insert(Key::Ctrl('a'), Command::ToggleInputCommand);
         n.map.insert(Key::Ctrl('q'), Command::QuitCommand);
         n.map.insert(Key::Ctrl('o'), Command::OpenPanelCommand);
 
