@@ -11,6 +11,6 @@ color = "default"
 enabled = true
 
 [[keys]]
-key = "ctrl+a"
+key = "c"
 command = "OpenPanel"
 args = ["a"]

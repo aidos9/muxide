@@ -2,6 +2,7 @@ use termion::event::Key;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Command {
+    EnterSingleCharacterCommand,
     FocusCommandPromptCommand,
     StopEnteringInputCommand,
     ToggleInputCommand,
@@ -10,6 +11,7 @@ pub enum Command {
     ArrowUpCommand,
     ArrowDownCommand,
     ClosePanelCommand(usize),
+    CloseMostRecentPanelCommand,
     OpenPanelCommand,
     SwapPanelsCommand(usize, usize),
     FocusPanelCommand(usize),
@@ -25,6 +27,7 @@ pub enum Command {
 impl Command {
     pub fn get_name(&self) -> &str {
         return match self {
+            Self::EnterSingleCharacterCommand => "EnterSingleCharacter",
             Self::FocusCommandPromptCommand => "FocusCommandPrompt",
             Self::StopEnteringInputCommand => "StopEnteringInput",
             Self::ToggleInputCommand => "ToggleInput",
@@ -33,6 +36,7 @@ impl Command {
             Self::ArrowUpCommand => "ArrowUp",
             Self::ArrowDownCommand => "ArrowDown",
             Self::ClosePanelCommand(_) => "ClosePanel",
+            Self::CloseMostRecentPanelCommand => "CloseMostRecentPanel",
             Self::OpenPanelCommand => "OpenPanel",
             Self::SwapPanelsCommand(_, _) => "SwapPanels",
             Self::FocusPanelCommand(_) => "FocusPanel",
@@ -49,6 +53,7 @@ impl Command {
         let mut required_1_arg = true;
 
         let cmd = match lowered_name.as_str() {
+            "entersinglecharacter" => Self::EnterSingleCharacterCommand,
             "focuscommandprompt" => Self::FocusCommandPromptCommand,
             "stopenteringinput" => Self::StopEnteringInputCommand,
             "toggleinput" => Self::ToggleInputCommand,

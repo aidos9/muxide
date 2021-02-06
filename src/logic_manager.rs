@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use vt100::Parser;
 
+/// The timeout used when we poll the PTY for if it is available.
 const POLL_TIMEOUT_MS: i32 = 100;
 
 /// This method runs a pty, handling shutdown messages, stdin and stdout.
@@ -99,15 +100,16 @@ struct Panel {
 /// Handles a majority of the overall application logic, i.e. receiving stdin input and the panel
 /// outputs, managing the display and executing most commands.
 pub struct LogicManager {
-    config: Config,
-    cmd_buffer: Vec<char>,
-    selected_panel: Option<usize>,
+    display: Display,
     panels: Vec<Panel>,
+    selected_panel: Option<usize>,
+    cmd_buffer: Vec<char>,
+    halt_execution: bool,
+    single_key_command: bool,
+    config: Config,
     connection_manager: ChannelController,
     input_manager: InputManager,
-    display: Display,
     next_panel_id: usize,
-    halt_execution: bool,
     close_handles: Vec<(usize, JoinHandle<()>)>,
 }
 
@@ -137,6 +139,7 @@ impl LogicManager {
             next_panel_id: 0,
             halt_execution: false,
             close_handles: Vec::new(),
+            single_key_command: false,
         });
     }
 
@@ -171,7 +174,19 @@ impl LogicManager {
         }
     }
 
-    async fn handle_stdin(&mut self, bytes: Vec<u8>) {
+    async fn handle_stdin(&mut self, mut bytes: Vec<u8>) {
+        if bytes.is_empty() {
+            return;
+        }
+
+        if self.single_key_command {
+            let ch = bytes.remove(0) as char;
+            let cmd = self.process_single_key_command(ch).unwrap();
+            self.execute_command(&cmd);
+
+            self.single_key_command = false;
+        }
+
         if bytes.is_empty() {
             return;
         }
@@ -204,7 +219,7 @@ impl LogicManager {
             if let Some(k) = self
                 .config
                 .key_map()
-                .command_for_key(k)
+                .command_for_shortcut(k)
                 .map(|cmd| cmd.clone())
             {
                 self.execute_command(&k);
@@ -221,9 +236,10 @@ impl LogicManager {
     fn handle_cmd_input(&mut self, event: Event) -> Result<(), MuxideError> {
         if let Event::Key(key) = event {
             if key == Key::Char('\n') {
-                self.execute_command(&self.process_command()?);
+                let res = self.execute_command(&self.process_command()?);
                 self.cmd_buffer.clear();
                 self.display.set_cmd_offset(0);
+                res?;
             } else if key == Key::Backspace && !self.cmd_buffer.is_empty() {
                 self.cmd_buffer.pop();
                 self.display.sub_cmd_offset(1);
@@ -292,6 +308,17 @@ impl LogicManager {
         return Ok(());
     }
 
+    fn close_panel(&mut self, id: usize) -> Result<(), MuxideError> {
+        if self.panel_with_id(id).is_none() {
+            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+        }
+
+        futures::executor::block_on(self.connection_manager.send_shutdown(id));
+
+        return self.remove_panel(id);
+    }
+
+    /// This method is primarily used when a panel closes unexpectedly
     fn remove_panel(&mut self, id: usize) -> Result<(), MuxideError> {
         let new_sizes = self.display.close_panel(id)?;
 
@@ -318,6 +345,20 @@ impl LogicManager {
         futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
         return Ok(());
+    }
+
+    fn process_single_key_command(&self, character: char) -> Result<Command, MuxideError> {
+        return self
+            .config
+            .key_map()
+            .command_for_character(&character)
+            .map(|cmd| cmd.clone())
+            .ok_or(
+                ErrorType::CommandError {
+                    description: format!("No command mapped to \'{}\'", character),
+                }
+                .into_error(),
+            );
     }
 
     fn process_command(&self) -> Result<Command, MuxideError> {
@@ -349,7 +390,7 @@ impl LogicManager {
             .map_err(|description| ErrorType::CommandError { description }.into_error());
     }
 
-    fn execute_command(&mut self, cmd: &Command) {
+    fn execute_command(&mut self, cmd: &Command) -> Result<(), MuxideError> {
         match cmd {
             Command::QuitCommand => {
                 self.halt_execution = true;
@@ -362,10 +403,33 @@ impl LogicManager {
                 }
             }
             Command::OpenPanelCommand => {
-                self.open_new_panel().unwrap();
+                self.open_new_panel()?;
+            }
+            Command::EnterSingleCharacterCommand => {
+                self.single_key_command = true;
+            }
+            Command::ClosePanelCommand(id) => {
+                self.close_panel(*id)?;
+            }
+            Command::CloseMostRecentPanelCommand => {
+                let mut recent = None;
+
+                for panel in &self.panels {
+                    if recent.is_none() {
+                        recent = Some(panel.id);
+                    } else if recent.unwrap() < panel.id {
+                        recent = Some(panel.id);
+                    }
+                }
+
+                if let Some(panel) = recent {
+                    self.close_panel(panel)?;
+                }
             }
             _ => unimplemented!(),
         }
+
+        return Ok(());
     }
 
     async fn resize_panels(&mut self, panels: Vec<(usize, Size)>) -> Result<(), MuxideError> {
