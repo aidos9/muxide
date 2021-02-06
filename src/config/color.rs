@@ -14,13 +14,13 @@ macro_rules! define_new_color {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct BorderColor {
+pub struct Color {
     r: u8,
     g: u8,
     b: u8,
 }
 
-impl BorderColor {
+impl Color {
     #[allow(dead_code)]
     pub fn new(r: u8, g: u8, b: u8) -> Self {
         return Self { r, g, b };
@@ -108,13 +108,14 @@ impl BorderColor {
     }
 }
 
-impl TryFrom<String> for BorderColor {
+impl TryFrom<String> for Color {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let lowered = value.to_lowercase();
 
         return Ok(match lowered.as_str() {
+            "default" => Self::default(),
             "red" => Self::red(),
             "green" => Self::green(),
             "orange" => Self::orange(),
@@ -131,7 +132,7 @@ impl TryFrom<String> for BorderColor {
     }
 }
 
-impl Default for BorderColor {
+impl Default for Color {
     fn default() -> Self {
         return Self {
             r: 255,
@@ -141,7 +142,7 @@ impl Default for BorderColor {
     }
 }
 
-impl<'de> Deserialize<'de> for BorderColor {
+impl<'de> Deserialize<'de> for Color {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -156,33 +157,30 @@ impl<'de> Deserialize<'de> for BorderColor {
 
 #[cfg(test)]
 mod tests {
-    use super::BorderColor;
+    use super::Color;
     use std::convert::TryFrom;
 
     #[test]
     fn test_from_string_red() {
         let input = "red".to_string();
-        assert_eq!(BorderColor::red(), BorderColor::try_from(input).unwrap());
+        assert_eq!(Color::red(), Color::try_from(input).unwrap());
     }
 
     #[test]
     fn test_from_string_fail() {
         let input = "reds".to_string();
-        assert!(BorderColor::try_from(input).is_err());
+        assert!(Color::try_from(input).is_err());
     }
 
     #[test]
     fn test_from_string_fail_2() {
         let input = "1288, 0, 88".to_string();
-        assert!(BorderColor::try_from(input).is_err());
+        assert!(Color::try_from(input).is_err());
     }
 
     #[test]
     fn test_from_string_rgb() {
         let input = "128, 0, 88".to_string();
-        assert_eq!(
-            BorderColor::new(128, 0, 88),
-            BorderColor::try_from(input).unwrap()
-        );
+        assert_eq!(Color::new(128, 0, 88), Color::try_from(input).unwrap());
     }
 }

@@ -135,7 +135,7 @@ impl Default for Keys {
             .insert(Key::Ctrl('p'), Command::ToggleInputCommand);
         n.shortcut_map.insert(Key::Ctrl('q'), Command::QuitCommand);
 
-        n.single_key_map.insert('c', Command::OpenPanelCommand);
+        n.single_key_map.insert('n', Command::OpenPanelCommand);
         n.single_key_map
             .insert('q', Command::CloseMostRecentPanelCommand);
 

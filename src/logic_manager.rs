@@ -123,7 +123,7 @@ impl LogicManager {
         // manager to send stdin input to the channel controller
         let (connection_manager, stdin_tx) = ChannelController::new();
         let input_manager = InputManager::start(stdin_tx)?;
-        let display = match Display::new().init() {
+        let display = match Display::new(config.clone()).init() {
             Some(d) => d,
             None => return Err(ErrorType::DisplayNotRunningError.into_error()),
         };

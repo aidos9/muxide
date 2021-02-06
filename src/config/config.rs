@@ -1,9 +1,10 @@
-use super::BorderColor;
+use super::Color;
 use super::Keys;
 use serde::Deserialize;
 use std::time::Duration;
 
-fn serde_default_as_true() -> bool {
+#[inline]
+const fn serde_default_as_true() -> bool {
     true
 }
 
@@ -15,8 +16,19 @@ fn default_prompt_text() -> String {
     return String::from(">");
 }
 
-fn default_border_color() -> Option<BorderColor> {
-    return Some(BorderColor::default());
+#[inline]
+const fn default_vertical_character() -> char {
+    return '|';
+}
+
+#[inline]
+const fn default_horizontal_character() -> char {
+    return '-';
+}
+
+#[inline]
+const fn default_intersection_character() -> char {
+    return '+';
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
@@ -26,15 +38,7 @@ pub struct Config {
     #[serde(default)]
     keys: Keys,
     #[serde(default)]
-    command_prompt: CommandPrompt,
-    #[serde(default)]
-    top_border: Border,
-    #[serde(default)]
-    bottom_border: Border,
-    #[serde(default)]
-    left_border: Border,
-    #[serde(default)]
-    right_border: Border,
+    borders: Borders,
 
     /// Potentially can be removed
     thread_delay_period: Option<Duration>,
@@ -44,24 +48,26 @@ pub struct Config {
 struct Environment {
     #[serde(default = "default_panel_init_command")]
     panel_init_command: String,
-    #[serde(default = "default_border_color")]
-    default_border_color: Option<BorderColor>,
-}
-
-#[derive(Clone, PartialEq, Debug, Deserialize)]
-struct CommandPrompt {
     #[serde(default = "default_prompt_text")]
     prompt_text: String,
+    #[serde(default)]
+    selected_panel_color: Color,
+    #[serde(default)]
+    selected_workspace_color: Color,
     #[serde(default = "serde_default_as_true")]
-    enabled: bool,
+    show_workspaces: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize)]
-struct Border {
+struct Borders {
+    #[serde(default = "default_vertical_character")]
+    vertical_character: char,
+    #[serde(default = "default_horizontal_character")]
+    horizontal_character: char,
+    #[serde(default = "default_intersection_character")]
+    intersection_character: char,
     #[serde(default)]
-    color: BorderColor,
-    #[serde(default = "serde_default_as_true")]
-    enabled: bool,
+    color: Color,
 }
 
 impl Config {
@@ -85,6 +91,14 @@ impl Config {
         return &mut self.keys;
     }
 
+    pub fn get_borders_ref(&self) -> &Borders {
+        return &self.borders;
+    }
+
+    pub fn get_environment_ref(&self) -> &Environment {
+        return &self.environment;
+    }
+
     pub fn get_panel_init_command(&self) -> &String {
         return &self.environment.panel_init_command;
     }
@@ -101,16 +115,35 @@ impl Config {
     }
 }
 
+impl Borders {
+    #[inline]
+    pub fn get_intersection_char(&self) -> char {
+        return self.intersection_character;
+    }
+
+    #[inline]
+    pub fn get_vertical_char(&self) -> char {
+        return self.vertical_character;
+    }
+
+    #[inline]
+    pub fn get_horizontal_char(&self) -> char {
+        return self.horizontal_character;
+    }
+}
+
+impl Environment {
+    pub fn show_workspaces(&self) -> bool {
+        return self.show_workspaces;
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         return Self {
             environment: Environment::default(),
             keys: Keys::default(),
-            command_prompt: CommandPrompt::default(),
-            top_border: Border::default(),
-            bottom_border: Border::default(),
-            left_border: Border::default(),
-            right_border: Border::default(),
+            borders: Borders::default(),
 
             /// Potentially can be removed
             thread_delay_period: None,
@@ -122,32 +155,28 @@ impl Default for Environment {
     fn default() -> Self {
         return Self {
             panel_init_command: default_panel_init_command(),
-            default_border_color: default_border_color(),
-        };
-    }
-}
-
-impl Default for CommandPrompt {
-    fn default() -> Self {
-        return Self {
             prompt_text: default_prompt_text(),
-            enabled: true,
+            selected_panel_color: Color::default(),
+            selected_workspace_color: Color::default(),
+            show_workspaces: true,
         };
     }
 }
 
-impl Default for Border {
+impl Default for Borders {
     fn default() -> Self {
         return Self {
-            color: BorderColor::default(),
-            enabled: true,
+            vertical_character: default_vertical_character(),
+            horizontal_character: default_horizontal_character(),
+            intersection_character: default_intersection_character(),
+            color: Color::default(),
         };
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BorderColor, Config};
+    use super::{Color, Config};
     use crate::command::Command;
     use termion::event::Key;
 
@@ -156,21 +185,25 @@ mod tests {
         let input = "
         [environment]\n\
         panel_init_command = \"/usr/local/bin/fish\"\n\
+        show_workspaces = true\n\
+        prompt_text = \">\"\n\
+        \n\
+        [borders]\n\
+        vertical_character = \"|\"\n\
+        horizontal_character = \" \"\n\
+        intersection_character = \"~\"\n\
+        color = \"blue\"\n\
         \n\
         [command_prompt]\n\
-        prompt_text = \">\"\n\
-        enabled = true\n\
-        \
-        [top_border]\n\
-        color = \"blue\"\n\
         enabled = true\n\
         \n\
         [[keys]]\n\
-        key = \"ctrl+a\"\n\
+        shortcut = \"ctrl+a\"\n\
         command = \"OpenPanel\"\n\
         \n\
         [[keys]]\n\
-        key = \"ctrl+p\"\n\
+        shortcut = \"ctrl+p\"\n\
+        key = \"f\"\n\
         command = \"FocusCommandPrompt\"\n\
         #args = [\"a\"]\n\
         ";
@@ -181,12 +214,15 @@ mod tests {
         comp.environment.panel_init_command = String::from("/usr/local/bin/fish");
         comp.command_prompt.prompt_text = String::from(">");
         comp.command_prompt.enabled = true;
-        comp.top_border.color = BorderColor::blue();
-        comp.top_border.enabled = true;
+        comp.borders.color = Color::blue();
+        comp.borders.horizontal_character = ' ';
+        comp.borders.intersection_character = '~';
         comp.keys
-            .map_command(Key::Ctrl('a'), Command::OpenPanelCommand);
+            .map_shortcut(Key::Ctrl('a'), Command::OpenPanelCommand);
         comp.keys
-            .map_command(Key::Ctrl('p'), Command::FocusCommandPromptCommand);
+            .map_shortcut(Key::Ctrl('p'), Command::FocusCommandPromptCommand);
+        comp.keys
+            .map_character('f', Command::FocusCommandPromptCommand);
 
         assert_eq!(conf, comp);
     }

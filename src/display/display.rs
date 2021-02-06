@@ -1,18 +1,22 @@
 use super::panel::PanelPtr;
 use crate::error::{ErrorType, MuxideError};
 use crate::geometry::Size;
+use crate::Config;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
 use std::io::{stdout, Stdout, Write};
 
 /// Manages the different panels and renders to the terminal the correct output and layout.
 pub struct Display {
+    config: Config,
     panels: Vec<PanelPtr>,
     selected_panel: Option<PanelPtr>,
     layout: Layout,
     prompt_content: String,
     prompt_cursor_offset: u16,
     completed_initialization: bool,
+    workspaces_count: u8,
+    selected_workspace: u8,
 }
 
 /// The different supported layouts of panels
@@ -38,26 +42,23 @@ enum Layout {
 }
 
 impl Display {
-    /// The character user for the vertical side borders
-    const VERTICAL_BORDER_CHARACTER: char = '|';
-    /// The character user for the horizontal side borders
-    const HORIZONTAL_BORDER_CHARACTER: char = '-';
-    /// The character user for the corner borders
-    const CORNER_BORDER_CHARACTER: char = '+';
     /// The text used as a prompt when entering a command
     const PROMPT_STRING: &'static str = "cmd > ";
     /// The text that is displayed when there are no open panels.
     const EMPTY_TEXT: &'static str = "No Panels Open";
 
     /// Create a new "display" instance.
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         return Self {
+            config,
             layout: Layout::Empty,
             panels: Vec::new(),
             prompt_content: String::new(),
             prompt_cursor_offset: 0,
             selected_panel: None,
             completed_initialization: false,
+            workspaces_count: 1,
+            selected_workspace: 1,
         };
     }
 
@@ -437,36 +438,45 @@ impl Display {
         &self,
         stdout: &mut Stdout,
         terminal_size: &Size,
+        vertical_line: bool,
+        horizontal_line: bool,
     ) -> Result<(), MuxideError> {
+        let horizontal_character = self.config.get_borders_ref().get_horizontal_char();
+        let intersection_character = self.config.get_borders_ref().get_intersection_char();
+        let vertical_character = self.config.get_borders_ref().get_vertical_char();
+
         Self::reset_stdout_style(stdout)?;
-
-        // Print the top row
-        queue!(
-            stdout,
-            cursor::MoveTo(0, 0),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-            style::Print(
-                Self::HORIZONTAL_BORDER_CHARACTER
-                    .to_string()
-                    .repeat(terminal_size.get_cols() as usize - 2)
-            ),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-        )
-        .map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
-
-        // Print the vertical borders
-        for i in 1..terminal_size.get_rows() - 3 {
+        if self.config.get_environment_ref().show_workspaces() {
+            // Print the top row
             queue!(
                 stdout,
-                cursor::MoveTo(0, i),
-                style::Print(Self::VERTICAL_BORDER_CHARACTER),
-                cursor::MoveTo(terminal_size.get_cols() - 1, i),
-                style::Print(Self::VERTICAL_BORDER_CHARACTER),
+                cursor::MoveTo(0, 0),
+                style::Print(intersection_character),
+                style::Print(
+                    horizontal_character
+                        .to_string()
+                        .repeat(terminal_size.get_cols() as usize - 2)
+                ),
+                style::Print(intersection_character),
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
+
+            // Print the bottom row
+            queue!(
+                stdout,
+                cursor::MoveTo(0, 2),
+                style::Print(intersection_character),
+                style::Print(
+                    horizontal_character
+                        .to_string()
+                        .repeat(terminal_size.get_cols() as usize - 2)
+                ),
+                style::Print(intersection_character),
             )
             .map_err(|e| {
                 ErrorType::QueueExecuteError {
@@ -476,75 +486,24 @@ impl Display {
             })?;
         }
 
-        // Print the horizontal border above the command prompt
-        queue!(
-            stdout,
-            cursor::MoveTo(0, terminal_size.get_rows() - 3),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-            style::Print(
-                Self::HORIZONTAL_BORDER_CHARACTER
-                    .to_string()
-                    .repeat(terminal_size.get_cols() as usize - 2)
-            ),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-        )
-        .map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
-
-        // Print the prompt and its content
-        queue!(
-            stdout,
-            cursor::MoveTo(0, terminal_size.get_rows() - 2),
-            style::Print(Self::VERTICAL_BORDER_CHARACTER),
-            style::Print(Self::PROMPT_STRING),
-            style::Print(&self.prompt_content),
-            cursor::MoveTo(terminal_size.get_cols() - 1, terminal_size.get_rows() - 2),
-            style::Print(Self::VERTICAL_BORDER_CHARACTER),
-        )
-        .map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
-
-        queue!(
-            stdout,
-            cursor::MoveTo(0, terminal_size.get_rows() - 1),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-            style::Print(
-                Self::HORIZONTAL_BORDER_CHARACTER
-                    .to_string()
-                    .repeat(terminal_size.get_cols() as usize - 2)
-            ),
-            style::Print(Self::CORNER_BORDER_CHARACTER),
-        )
-        .map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
-
         return Ok(());
     }
 
     fn queue_vertical_centre_line(
+        &self,
         stdout: &mut Stdout,
         terminal_size: &Size,
         col: u16,
     ) -> Result<(), MuxideError> {
+        let vertical_character = self.config.get_borders_ref().get_vertical_char();
+
         Self::reset_stdout_style(stdout)?;
 
         for r in 1..terminal_size.get_rows() - 3 {
             queue!(
                 stdout,
                 cursor::MoveTo(col, r),
-                style::Print(Self::VERTICAL_BORDER_CHARACTER)
+                style::Print(vertical_character)
             )
             .map_err(|e| {
                 ErrorType::QueueExecuteError {

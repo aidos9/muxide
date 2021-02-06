@@ -1,14 +1,15 @@
 [environment]
 panel_init_command = "/usr/local/bin/fish"
-default_border_color = "default"
-
-[command_prompt]
+selected_workspace_color = "default"
+selected_panel_color = "default"
+show_workspaces = true
 prompt_text = ">"
-enabled = true
 
-[top_border]
+[borders]
+vertical_character = "|"
+horizontal_character = "-"
+intersection_character = "+"
 color = "default"
-enabled = true
 
 [[keys]]
 key = "c"

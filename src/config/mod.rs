@@ -1,7 +1,7 @@
-mod border_color;
+mod color;
 mod config;
 mod keys;
 
-use border_color::BorderColor;
+use color::Color;
 pub use config::Config;
 use keys::Keys;
