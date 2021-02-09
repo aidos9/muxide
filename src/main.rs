@@ -6,17 +6,6 @@ use std::path::Path;
 use std::process::exit;
 
 fn main() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_io()
-        .enable_time()
-        .build()
-        .unwrap();
-
-    rt.enter();
-    rt.block_on(async { muxide_start().await });
-}
-
-async fn muxide_start() {
     let path_string = match Config::default_path() {
         Some(p) => p,
         None => {
@@ -57,6 +46,17 @@ async fn muxide_start() {
         };
     }
 
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
+
+    rt.enter();
+    rt.block_on(async { muxide_start(config).await });
+}
+
+async fn muxide_start(config: Config) {
     // We don't care about errors that happen with this function, if it fails that's ok.
     let _ = execute!(stdout(), terminal::EnterAlternateScreen);
 
@@ -64,5 +64,10 @@ async fn muxide_start() {
     logic_manager.start_event_loop().await;
 
     // We don't care about errors that happen with this function, if it fails that's ok.
-    let _ = execute!(stdout(), terminal::LeaveAlternateScreen);
+    let _ = execute!(
+        stdout(),
+        crossterm::cursor::Show,
+        crossterm::style::ResetColor,
+        terminal::LeaveAlternateScreen
+    );
 }

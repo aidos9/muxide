@@ -1,15 +1,18 @@
+use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::convert::TryFrom;
 
+lazy_static! {
+    static ref TERMINFO_DATABASE: Option<terminfo::Database> = terminfo::Database::from_env().ok();
+}
+
 macro_rules! define_new_color {
     ($name:tt, $r:literal, $g:literal, $b:literal) => {
-        pub fn $name() -> Self {
-            return Self {
-                r: $r,
-                g: $g,
-                b: $b,
-            };
-        }
+        pub const $name: Self = Self {
+            r: $r,
+            g: $g,
+            b: $b,
+        };
     };
 }
 
@@ -26,17 +29,73 @@ impl Color {
         return Self { r, g, b };
     }
 
-    define_new_color!(red, 255, 0, 0);
-    define_new_color!(green, 0, 255, 0);
-    define_new_color!(orange, 255, 165, 0);
-    define_new_color!(blue, 0, 0, 255);
-    define_new_color!(magenta, 128, 0, 128);
-    define_new_color!(cyan, 0, 255, 255);
-    define_new_color!(teal, 0, 128, 128);
-    define_new_color!(yellow, 255, 255, 0);
-    define_new_color!(grey, 128, 128, 128);
-    define_new_color!(white, 255, 255, 255);
-    define_new_color!(black, 0, 0, 0);
+    pub fn r(&self) -> u8 {
+        return self.r;
+    }
+
+    pub fn g(&self) -> u8 {
+        return self.g;
+    }
+
+    pub fn b(&self) -> u8 {
+        return self.b;
+    }
+
+    pub fn crossterm_color(&self, default: crossterm::style::Color) -> crossterm::style::Color {
+        use crossterm::style::Color as cColor;
+
+        if TERMINFO_DATABASE.is_some() {
+            if let Some(b) = TERMINFO_DATABASE
+                .as_ref()
+                .unwrap()
+                .get::<terminfo::capability::TrueColor>()
+            {
+                if b.0 {
+                    return cColor::Rgb {
+                        r: self.r(),
+                        g: self.g(),
+                        b: self.b(),
+                    };
+                }
+            }
+        }
+
+        if self == &Self::RED {
+            return cColor::Red;
+        } else if self == &Self::GREEN {
+            return cColor::Green;
+        } else if self == &Self::BLUE {
+            return cColor::Blue;
+        } else if self == &Self::MAGENTA {
+            return cColor::Magenta;
+        } else if self == &Self::CYAN {
+            return cColor::Cyan;
+        } else if self == &Self::TEAL {
+            return cColor::DarkCyan;
+        } else if self == &Self::YELLOW {
+            return cColor::Yellow;
+        } else if self == &Self::GREY {
+            return cColor::Grey;
+        } else if self == &Self::WHITE {
+            return cColor::White;
+        } else if self == &Self::BLACK {
+            return cColor::Black;
+        } else {
+            return default;
+        }
+    }
+
+    define_new_color!(RED, 255, 0, 0);
+    define_new_color!(GREEN, 0, 255, 0);
+    define_new_color!(ORANGE, 255, 165, 0);
+    define_new_color!(BLUE, 0, 0, 255);
+    define_new_color!(MAGENTA, 128, 0, 128);
+    define_new_color!(CYAN, 0, 255, 255);
+    define_new_color!(TEAL, 0, 128, 128);
+    define_new_color!(YELLOW, 255, 255, 0);
+    define_new_color!(GREY, 128, 128, 128);
+    define_new_color!(WHITE, 255, 255, 255);
+    define_new_color!(BLACK, 0, 0, 0);
 
     pub fn from_rgb_string(string: String) -> Result<Self, String> {
         let characters: Vec<char> = string.chars().collect();
@@ -116,17 +175,17 @@ impl TryFrom<String> for Color {
 
         return Ok(match lowered.as_str() {
             "default" => Self::default(),
-            "red" => Self::red(),
-            "green" => Self::green(),
-            "orange" => Self::orange(),
-            "blue" => Self::blue(),
-            "magenta" => Self::magenta(),
-            "cyan" => Self::cyan(),
-            "teal" => Self::teal(),
-            "yellow" => Self::yellow(),
-            "gray" | "grey" => Self::grey(),
-            "white" => Self::white(),
-            "black" => Self::black(),
+            "red" => Self::RED,
+            "green" => Self::GREEN,
+            "orange" => Self::ORANGE,
+            "blue" => Self::BLUE,
+            "magenta" => Self::MAGENTA,
+            "cyan" => Self::CYAN,
+            "teal" => Self::TEAL,
+            "yellow" => Self::YELLOW,
+            "gray" | "grey" => Self::GREY,
+            "white" => Self::WHITE,
+            "black" => Self::BLACK,
             _ => Self::from_rgb_string(lowered)?,
         });
     }

@@ -21,3 +21,5 @@ serde = { version = "1.0", features = ["derive"]}
 clap = "2.33"
 dirs = "3.0"
 either = "1.6"
+terminfo = "0.7"
+lazy_static = "1.4"

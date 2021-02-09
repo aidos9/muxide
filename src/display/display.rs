@@ -12,10 +12,7 @@ pub struct Display {
     panels: Vec<PanelPtr>,
     selected_panel: Option<PanelPtr>,
     layout: Layout,
-    prompt_content: String,
-    prompt_cursor_offset: u16,
     completed_initialization: bool,
-    workspaces_count: u8,
     selected_workspace: u8,
 }
 
@@ -53,12 +50,9 @@ impl Display {
             config,
             layout: Layout::Empty,
             panels: Vec::new(),
-            prompt_content: String::new(),
-            prompt_cursor_offset: 0,
             selected_panel: None,
             completed_initialization: false,
-            workspaces_count: 1,
-            selected_workspace: 1,
+            selected_workspace: 0,
         };
     }
 
@@ -98,26 +92,6 @@ impl Display {
         }
 
         return Err(ErrorType::NoPanelWithIDError { id }.into_error());
-    }
-
-    /// Set the text being displayed in the command prompt.
-    pub fn set_cmd_content(&mut self, content: String) {
-        self.prompt_content = content;
-    }
-
-    /// Allows for setting the cursor position in the command prompt
-    pub fn set_cmd_offset(&mut self, offset: u16) {
-        self.prompt_cursor_offset = offset;
-    }
-
-    /// Allows for adding a constant to the cursor position in the command prompt
-    pub fn add_cmd_offset(&mut self, offset: u16) {
-        self.prompt_cursor_offset += offset;
-    }
-
-    /// Allows for subtracting a constant from the cursor position in the command prompt
-    pub fn sub_cmd_offset(&mut self, offset: u16) {
-        self.prompt_cursor_offset -= offset;
     }
 
     /// Opens a new panel giving it the specified id. The id should be unique but it is
@@ -339,11 +313,11 @@ impl Display {
                         .map_err(|e| ErrorType::new_display_qe_error(e))?;
                 }
 
-                Self::queue_vertical_centre_line(
-                    &mut stdout,
-                    &size,
-                    left.get_size().get_cols() + 1,
-                )?;
+                // self.queue_vertical_centre_line(
+                //     &mut stdout,
+                //     &size,
+                //     left.get_size().get_cols() + 1,
+                // )?;
             }
             _ => (),
         }
@@ -413,15 +387,7 @@ impl Display {
                 }
             }
             None => {
-                execute!(
-                    stdout,
-                    cursor::Show,
-                    cursor::MoveTo(
-                        Self::PROMPT_STRING.len() as u16 + 1 + self.prompt_cursor_offset,
-                        terminal_size.get_rows() - 2
-                    ) // Column, row
-                )
-                .map_err(|e| {
+                execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0)).map_err(|e| {
                     ErrorType::QueueExecuteError {
                         reason: e.to_string(),
                     }
@@ -438,8 +404,8 @@ impl Display {
         &self,
         stdout: &mut Stdout,
         terminal_size: &Size,
-        vertical_line: bool,
-        horizontal_line: bool,
+        //vertical_line: bool,
+        //horizontal_line: bool,
     ) -> Result<(), MuxideError> {
         let horizontal_character = self.config.get_borders_ref().get_horizontal_char();
         let intersection_character = self.config.get_borders_ref().get_intersection_char();
@@ -458,6 +424,21 @@ impl Display {
                         .repeat(terminal_size.get_cols() as usize - 2)
                 ),
                 style::Print(intersection_character),
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
+
+            // Print the workspaces
+            self.print_workspaces_line(
+                stdout,
+                (0, 1),
+                self.selected_workspace as u16,
+                terminal_size.get_cols(),
+                vertical_character,
             )
             .map_err(|e| {
                 ErrorType::QueueExecuteError {
@@ -485,6 +466,8 @@ impl Display {
                 .into_error()
             })?;
         }
+
+        Self::reset_stdout_style(stdout)?;
 
         return Ok(());
     }
@@ -565,5 +548,89 @@ impl Display {
         self.panels[index].set_hide_cursor(hide);
 
         return true;
+    }
+
+    #[inline]
+    fn print_workspaces_line(
+        &self,
+        stdout: &mut Stdout,
+        location: (u16, u16),
+        selected_workspace: u16,
+        width: u16,
+        vertical_character: char,
+    ) -> Result<(), crossterm::ErrorKind> {
+        // Each workspace cell is 3 character ([1]), plus 1 for spacing, subtract 1 for the last
+        // space and add 2 to account for the two border characters.
+        // Should look like this:
+        // | [1] [2] [3]         |
+        // or
+        // | [1] [2] [3] [4] ... [10] |
+        queue!(stdout, cursor::MoveTo(location.0, location.1))?;
+        let selected_color = self
+            .config
+            .get_environment_ref()
+            .selected_workspace_color()
+            .crossterm_color(crossterm::style::Color::White);
+
+        if width == 0 {
+            queue!(stdout, style::Print(""))?;
+        } else if width == 1 {
+            queue!(stdout, style::Print(" "))?;
+        } else if width < 7 {
+            queue!(stdout, style::Print(vertical_character))?;
+            queue!(
+                stdout,
+                style::Print((0..width - 2).map(|_| ' ').collect::<String>())
+            )?;
+            queue!(stdout, style::Print(vertical_character))?;
+        } else if width < 43 {
+            queue!(stdout, style::Print(vertical_character))?;
+            queue!(
+                stdout,
+                style::Print(vertical_character),
+                style::Print(' '),
+                style::SetBackgroundColor(selected_color),
+                style::Print(format!("[{}]", selected_workspace)),
+                style::ResetColor
+            )?;
+
+            if width > 7 {
+                queue!(
+                    stdout,
+                    style::Print((0..(width as usize - 7)).map(|_| ' ').collect::<String>())
+                )?;
+            }
+
+            queue!(stdout, style::Print(' '))?;
+            queue!(stdout, style::Print(vertical_character))?;
+        } else {
+            queue!(stdout, style::Print(vertical_character))?;
+
+            for i in 0..10 {
+                if i == selected_workspace {
+                    queue!(
+                        stdout,
+                        style::Print(' '),
+                        style::SetBackgroundColor(selected_color),
+                        style::Print(format!("[{}]", selected_workspace)),
+                        style::ResetColor
+                    )?;
+                } else {
+                    queue!(stdout, style::Print(format!(" [{}]", i)))?;
+                }
+            }
+
+            if width > 43 {
+                queue!(
+                    stdout,
+                    style::Print((0..(width as usize - 43)).map(|_| ' ').collect::<String>())
+                )?;
+            }
+
+            queue!(stdout, style::Print(' '))?;
+            queue!(stdout, style::Print(vertical_character))?;
+        }
+
+        return Ok(());
     }
 }

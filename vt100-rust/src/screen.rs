@@ -1,7 +1,6 @@
 use crate::term::BufWrite as _;
 use std::convert::TryInto as _;
 use unicode_width::UnicodeWidthChar as _;
-use enumset::EnumSet;
 
 const DEFAULT_MULTI_PARAMS: &[i64] = &[0];
 

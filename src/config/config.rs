@@ -45,7 +45,7 @@ pub struct Config {
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
-struct Environment {
+pub struct Environment {
     #[serde(default = "default_panel_init_command")]
     panel_init_command: String,
     #[serde(default = "default_prompt_text")]
@@ -59,7 +59,7 @@ struct Environment {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize)]
-struct Borders {
+pub struct Borders {
     #[serde(default = "default_vertical_character")]
     vertical_character: char,
     #[serde(default = "default_horizontal_character")]
@@ -135,6 +135,10 @@ impl Borders {
 impl Environment {
     pub fn show_workspaces(&self) -> bool {
         return self.show_workspaces;
+    }
+
+    pub fn selected_workspace_color(&self) -> Color {
+        return self.selected_workspace_color;
     }
 }
 
@@ -212,8 +216,6 @@ mod tests {
 
         let mut comp = Config::default();
         comp.environment.panel_init_command = String::from("/usr/local/bin/fish");
-        comp.command_prompt.prompt_text = String::from(">");
-        comp.command_prompt.enabled = true;
         comp.borders.color = Color::blue();
         comp.borders.horizontal_character = ' ';
         comp.borders.intersection_character = '~';

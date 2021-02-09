@@ -209,7 +209,7 @@ impl LogicManager {
                         .await
                         .unwrap();
                 }
-                None => self.handle_cmd_input(event).unwrap(),
+                None => (),
             }
         }
     }
@@ -230,29 +230,6 @@ impl LogicManager {
         } else {
             return false;
         }
-    }
-
-    /// Handles input that is intended for the command prompt
-    fn handle_cmd_input(&mut self, event: Event) -> Result<(), MuxideError> {
-        if let Event::Key(key) = event {
-            if key == Key::Char('\n') {
-                let res = self.execute_command(&self.process_command()?);
-                self.cmd_buffer.clear();
-                self.display.set_cmd_offset(0);
-                res?;
-            } else if key == Key::Backspace && !self.cmd_buffer.is_empty() {
-                self.cmd_buffer.pop();
-                self.display.sub_cmd_offset(1);
-            } else if let Key::Char(ch) = key {
-                self.cmd_buffer.push(ch);
-                self.display.add_cmd_offset(1);
-            }
-
-            self.display
-                .set_cmd_content(self.cmd_buffer.iter().collect());
-        }
-
-        return Ok(());
     }
 
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
