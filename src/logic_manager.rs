@@ -9,8 +9,7 @@ use crate::pty::Pty;
 use either::Either;
 use nix::poll;
 use std::os::unix::io::AsRawFd;
-use termion::event;
-use termion::event::{Event, Key};
+use termion::event::{self, Event};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -103,7 +102,6 @@ pub struct LogicManager {
     display: Display,
     panels: Vec<Panel>,
     selected_panel: Option<usize>,
-    cmd_buffer: Vec<char>,
     halt_execution: bool,
     single_key_command: bool,
     config: Config,
@@ -130,7 +128,6 @@ impl LogicManager {
 
         return Ok(Self {
             config,
-            cmd_buffer: Vec::new(),
             selected_panel: None,
             panels: Vec::new(),
             connection_manager,
@@ -257,7 +254,7 @@ impl LogicManager {
         let pty = Pty::open(self.config.get_panel_init_command())?;
 
         let mut new_sizes = self.display.open_new_panel(id)?;
-        let new_panel_size = new_sizes.pop().unwrap().1;
+        let new_panel_size = new_sizes.last().unwrap().1;
         let parser = Parser::new(
             new_panel_size.get_rows(),
             new_panel_size.get_cols(),
@@ -321,6 +318,8 @@ impl LogicManager {
 
         futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
+        self.connection_manager.remove_panel(id)?;
+
         return Ok(());
     }
 
@@ -336,35 +335,6 @@ impl LogicManager {
                 }
                 .into_error(),
             );
-    }
-
-    fn process_command(&self) -> Result<Command, MuxideError> {
-        let mut command_name = Vec::new();
-        let mut args = Vec::new();
-
-        for ch in &self.cmd_buffer {
-            if ch.is_whitespace() {
-                break;
-            } else {
-                command_name.push(*ch);
-            }
-        }
-
-        let mut current_arg = Vec::new();
-
-        for i in command_name.len()..self.cmd_buffer.len() {
-            if self.cmd_buffer[i].is_whitespace() {
-                args.push(current_arg.into_iter().collect());
-                current_arg = Vec::new();
-            } else {
-                current_arg.push(self.cmd_buffer[i]);
-            }
-        }
-
-        let command_name: String = command_name.into_iter().collect();
-
-        return Command::try_from_string(command_name, args)
-            .map_err(|description| ErrorType::CommandError { description }.into_error());
     }
 
     fn execute_command(&mut self, cmd: &Command) -> Result<(), MuxideError> {
@@ -402,6 +372,10 @@ impl LogicManager {
                 if let Some(panel) = recent {
                     self.close_panel(panel)?;
                 }
+            }
+            Command::FocusPanelCommand(id) => {
+                self.selected_panel = Some(*id);
+                self.display.set_selected_panel(Some(*id));
             }
             _ => unimplemented!(),
         }
@@ -450,14 +424,6 @@ impl LogicManager {
         }
 
         return None;
-    }
-
-    fn get_cmd_buffer_string(&self) -> String {
-        return self.cmd_buffer.iter().collect();
-    }
-
-    fn clear_buffer(&mut self) {
-        self.cmd_buffer.clear();
     }
 
     fn get_next_id(&mut self) -> usize {

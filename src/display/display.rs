@@ -1,3 +1,4 @@
+use super::layout::Layout;
 use super::panel::PanelPtr;
 use crate::error::{ErrorType, MuxideError};
 use crate::geometry::Size;
@@ -16,31 +17,7 @@ pub struct Display {
     selected_workspace: u8,
 }
 
-/// The different supported layouts of panels
-enum Layout {
-    Empty,
-    Single {
-        panel: PanelPtr,
-    },
-    VerticalStack {
-        lower: PanelPtr,
-        upper: PanelPtr,
-    },
-    HorizontalStack {
-        left: PanelPtr,
-        right: PanelPtr,
-    },
-    QuadStack {
-        lower_left: PanelPtr,
-        lower_right: PanelPtr,
-        upper_left: PanelPtr,
-        upper_right: PanelPtr,
-    },
-}
-
 impl Display {
-    /// The text used as a prompt when entering a command
-    const PROMPT_STRING: &'static str = "cmd > ";
     /// The text that is displayed when there are no open panels.
     const EMPTY_TEXT: &'static str = "No Panels Open";
 
@@ -106,8 +83,8 @@ impl Display {
 
         let new_layout = match &self.layout {
             Layout::Empty => {
-                let size = Self::get_terminal_size()?;
-                let panel = self.init_panel(id, size - Size::new(4, 2), (1, 1));
+                let size = Self::get_terminal_size()? - Size::new(2, 0);
+                let panel = self.init_panel(id, size, (0, 2)); // (col, row)
 
                 self.selected_panel = Some(panel.clone());
                 changed.push((id, size));
@@ -115,17 +92,17 @@ impl Display {
                 Layout::Single { panel }
             }
             Layout::Single { panel } => {
-                // -3 cols (left border, right border, center border)
-                // -4 rows (top border, bottom border, cmd input, cmd bottom border)
+                // -1 cols (center border)
+                // -2 rows (workspaces, workspaces bottom border)
                 let term_size = Self::get_terminal_size()?;
-                let size = term_size - Size::new(4, 3);
+                let size = term_size - Size::new(2, 1);
                 let mut left_size = size;
                 left_size.divide_width_by_const(2);
                 let right_size = Size::new(size.get_rows(), size.get_cols() - left_size.get_cols());
 
                 let mut left = panel.clone(); // The location stays the same but the size needs to be re-adjusted
                 left.set_size(left_size.clone());
-                let right = self.init_panel(id, right_size, (2 + left_size.get_cols(), 1)); // 2 to account for the left and center borders
+                let right = self.init_panel(id, right_size, (2 + left_size.get_cols(), 2)); // + 2 to account for the center border
 
                 changed.push((left.get_id(), left_size));
                 changed.push((id, right_size));
@@ -162,7 +139,12 @@ impl Display {
                 Layout::Empty
             }
             Layout::HorizontalStack { left, right } => {
-                let size = Self::get_terminal_size()? - Size::new(4, 2);
+                let size = Self::get_terminal_size()?
+                    - (if self.config.get_environment_ref().show_workspaces() {
+                        Size::new(2, 0)
+                    } else {
+                        Size::new(0, 0)
+                    });
                 let mut panel;
                 let other_id;
 
@@ -177,7 +159,7 @@ impl Display {
                 }
 
                 panel.set_size(size);
-                panel.set_location((1, 1));
+                panel.set_location((0, 2)); // (col, row)
 
                 for i in 0..self.panels.len() {
                     if self.panels[i].get_id() == id {
@@ -225,21 +207,27 @@ impl Display {
             .into_error()
         })?;
 
-        self.queue_main_borders(&mut stdout, &size)?;
+        self.queue_main_borders(
+            &mut stdout,
+            &size,
+            self.layout.requires_vertical_line(),
+            self.layout.requires_horizontal_line(),
+        )?;
 
         match &mut self.layout {
             Layout::Empty => {
                 let (mut col, mut row) = (size.get_cols(), size.get_rows());
 
-                // -2 For the left and right borders
-                col -= 2;
                 // Determine the center
                 col /= 2;
                 // Align the empty text to the center
                 col -= Self::EMPTY_TEXT.len() as u16 / 2;
 
-                // -4 for the top, bottom and the command prompt borders
-                row -= 4;
+                if self.config.get_environment_ref().show_workspaces() {
+                    // -2 for the workspaces bar
+                    row -= 2;
+                }
+
                 // Determine the center
                 row /= 2;
                 // Subtract 1 for the height of the text
@@ -248,22 +236,23 @@ impl Display {
                 // Add 1 to offset by the left and top borders. Obviously it is useless having
                 // the + and - operations that cancel each other but for clarity's sake they have
                 // been used.
-                queue!(stdout, cursor::MoveTo(col + 1, row + 1)).map_err(|e| {
+                queue!(
+                    stdout,
+                    cursor::MoveTo(col + 1, row + 1),
+                    style::Print(Self::EMPTY_TEXT)
+                )
+                .map_err(|e| {
                     ErrorType::QueueExecuteError {
                         reason: e.to_string(),
                     }
                     .into_error()
                 })?;
-
-                stdout
-                    .write(Self::EMPTY_TEXT.as_ref())
-                    .map_err(|e| ErrorType::new_display_qe_error(e))?;
             }
             Layout::Single { panel } => {
                 let contents = panel.get_content();
 
                 for (r, row) in contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1)).map_err(|e| {
+                    queue!(stdout, cursor::MoveTo(0, r as u16 + 2)).map_err(|e| {
                         ErrorType::QueueExecuteError {
                             reason: e.to_string(),
                         }
@@ -279,7 +268,7 @@ impl Display {
                 let right_contents = right.get_content();
 
                 for (r, row) in left_contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(1, r as u16 + 1)).map_err(|e| {
+                    queue!(stdout, cursor::MoveTo(0, r as u16 + 2)).map_err(|e| {
                         ErrorType::QueueExecuteError {
                             reason: e.to_string(),
                         }
@@ -300,7 +289,7 @@ impl Display {
                 for (r, row) in right_contents.into_iter().enumerate() {
                     queue!(
                         stdout,
-                        cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 1)
+                        cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 2)
                     )
                     .map_err(|e| {
                         ErrorType::QueueExecuteError {
@@ -312,12 +301,6 @@ impl Display {
                         .write(&row)
                         .map_err(|e| ErrorType::new_display_qe_error(e))?;
                 }
-
-                // self.queue_vertical_centre_line(
-                //     &mut stdout,
-                //     &size,
-                //     left.get_size().get_cols() + 1,
-                // )?;
             }
             _ => (),
         }
@@ -354,7 +337,7 @@ impl Display {
     }
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
-    fn reset_cursor(&self, stdout: &mut Stdout, terminal_size: &Size) -> Result<(), MuxideError> {
+    fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
         match &self.selected_panel {
             Some(panel) => {
                 let loc = panel.get_cursor_position();
@@ -404,38 +387,27 @@ impl Display {
         &self,
         stdout: &mut Stdout,
         terminal_size: &Size,
-        //vertical_line: bool,
-        //horizontal_line: bool,
+        vertical_line: bool,
+        horizontal_line: bool,
     ) -> Result<(), MuxideError> {
         let horizontal_character = self.config.get_borders_ref().get_horizontal_char();
         let intersection_character = self.config.get_borders_ref().get_intersection_char();
         let vertical_character = self.config.get_borders_ref().get_vertical_char();
 
         Self::reset_stdout_style(stdout)?;
-        if self.config.get_environment_ref().show_workspaces() {
-            // Print the top row
-            queue!(
-                stdout,
-                cursor::MoveTo(0, 0),
-                style::Print(intersection_character),
-                style::Print(
-                    horizontal_character
-                        .to_string()
-                        .repeat(terminal_size.get_cols() as usize - 2)
-                ),
-                style::Print(intersection_character),
-            )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
 
+        let center_col = terminal_size.get_cols() / 2;
+        let center_row = if self.config.get_environment_ref().show_workspaces() {
+            (terminal_size.get_rows() - 2) / 2 + 1
+        } else {
+            terminal_size.get_rows() / 2
+        };
+
+        if self.config.get_environment_ref().show_workspaces() {
             // Print the workspaces
-            self.print_workspaces_line(
+            self.queue_workspaces_line(
                 stdout,
-                (0, 1),
+                (0, 0),
                 self.selected_workspace as u16,
                 terminal_size.get_cols(),
                 vertical_character,
@@ -448,23 +420,76 @@ impl Display {
             })?;
 
             // Print the bottom row
-            queue!(
+
+            if vertical_line {
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, 1),
+                    style::Print(intersection_character),
+                    style::Print(
+                        horizontal_character
+                            .to_string()
+                            .repeat(center_col as usize - 1)
+                    ),
+                    style::Print(intersection_character),
+                    style::Print(
+                        horizontal_character
+                            .to_string()
+                            .repeat((terminal_size.get_cols() as usize - 2) - center_col as usize)
+                    ),
+                    style::Print(intersection_character),
+                )
+                .map_err(|e| {
+                    ErrorType::QueueExecuteError {
+                        reason: e.to_string(),
+                    }
+                    .into_error()
+                })?;
+            } else {
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, 1),
+                    style::Print(intersection_character),
+                    style::Print(
+                        horizontal_character
+                            .to_string()
+                            .repeat(terminal_size.get_cols() as usize - 2)
+                    ),
+                    style::Print(intersection_character),
+                )
+                .map_err(|e| {
+                    ErrorType::QueueExecuteError {
+                        reason: e.to_string(),
+                    }
+                    .into_error()
+                })?;
+            }
+        }
+
+        if vertical_line {
+            self.queue_vertical_centre_line(
                 stdout,
-                cursor::MoveTo(0, 2),
-                style::Print(intersection_character),
-                style::Print(
-                    horizontal_character
-                        .to_string()
-                        .repeat(terminal_size.get_cols() as usize - 2)
-                ),
-                style::Print(intersection_character),
-            )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+                terminal_size,
+                center_col,
+                if self.config.get_environment_ref().show_workspaces() {
+                    2
+                } else {
+                    0
+                },
+            )?;
+        }
+
+        if horizontal_line {
+            self.queue_horizontal_line(
+                stdout,
+                terminal_size,
+                center_row,
+                if vertical_line {
+                    Some(center_col)
+                } else {
+                    None
+                },
+            )?;
         }
 
         Self::reset_stdout_style(stdout)?;
@@ -477,12 +502,13 @@ impl Display {
         stdout: &mut Stdout,
         terminal_size: &Size,
         col: u16,
+        starting_row: u16,
     ) -> Result<(), MuxideError> {
         let vertical_character = self.config.get_borders_ref().get_vertical_char();
 
         Self::reset_stdout_style(stdout)?;
 
-        for r in 1..terminal_size.get_rows() - 3 {
+        for r in starting_row..terminal_size.get_rows() {
             queue!(
                 stdout,
                 cursor::MoveTo(col, r),
@@ -499,59 +525,59 @@ impl Display {
         return Ok(());
     }
 
-    fn reset_stdout_style(stdout: &mut Stdout) -> Result<(), MuxideError> {
-        queue!(stdout, style::ResetColor).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+    fn queue_horizontal_line(
+        &self,
+        stdout: &mut Stdout,
+        terminal_size: &Size,
+        row: u16,
+        center_intersection: Option<u16>,
+    ) -> Result<(), MuxideError> {
+        let horizontal_character = self.config.get_borders_ref().get_horizontal_char();
+        let intersection_character = self.config.get_borders_ref().get_intersection_char();
+
+        Self::reset_stdout_style(stdout)?;
+
+        if let Some(col) = center_intersection {
+            queue!(
+                stdout,
+                cursor::MoveTo(0, row),
+                style::Print(horizontal_character.to_string().repeat(col as usize)),
+                style::Print(intersection_character),
+                style::Print(
+                    horizontal_character
+                        .to_string()
+                        .repeat((terminal_size.get_cols() - col - 1) as usize)
+                ),
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
+        } else {
+            queue!(
+                stdout,
+                cursor::MoveTo(0, row),
+                style::Print(
+                    horizontal_character
+                        .to_string()
+                        .repeat(terminal_size.get_cols() as usize)
+                )
+            )
+            .map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
+        }
 
         return Ok(());
     }
 
-    fn panel_index_for_id(&self, id: usize) -> Option<usize> {
-        for i in 0..self.panels.len() {
-            if self.panels[i].get_id() == id {
-                return Some(i);
-            }
-        }
-
-        return None;
-    }
-
-    pub fn set_selected_panel(&mut self, id: Option<usize>) {
-        if id.is_none() {
-            self.selected_panel = None;
-            return;
-        }
-
-        let id = id.unwrap();
-
-        for panel in &self.panels {
-            if panel.get_id() == id {
-                self.selected_panel = Some(panel.clone());
-                return;
-            }
-        }
-
-        self.selected_panel = None;
-    }
-
-    pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
-        let index = match self.panel_index_for_id(id) {
-            Some(i) => i,
-            None => return false,
-        };
-
-        self.panels[index].set_cursor_position(col, row);
-        self.panels[index].set_hide_cursor(hide);
-
-        return true;
-    }
-
     #[inline]
-    fn print_workspaces_line(
+    fn queue_workspaces_line(
         &self,
         stdout: &mut Stdout,
         location: (u16, u16),
@@ -632,5 +658,56 @@ impl Display {
         }
 
         return Ok(());
+    }
+
+    fn reset_stdout_style(stdout: &mut Stdout) -> Result<(), MuxideError> {
+        queue!(stdout, style::ResetColor).map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        })?;
+
+        return Ok(());
+    }
+
+    fn panel_index_for_id(&self, id: usize) -> Option<usize> {
+        for i in 0..self.panels.len() {
+            if self.panels[i].get_id() == id {
+                return Some(i);
+            }
+        }
+
+        return None;
+    }
+
+    pub fn set_selected_panel(&mut self, id: Option<usize>) {
+        if id.is_none() {
+            self.selected_panel = None;
+            return;
+        }
+
+        let id = id.unwrap();
+
+        for panel in &self.panels {
+            if panel.get_id() == id {
+                self.selected_panel = Some(panel.clone());
+                return;
+            }
+        }
+
+        self.selected_panel = None;
+    }
+
+    pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
+        let index = match self.panel_index_for_id(id) {
+            Some(i) => i,
+            None => return false,
+        };
+
+        self.panels[index].set_cursor_position(col, row);
+        self.panels[index].set_hide_cursor(hide);
+
+        return true;
     }
 }
