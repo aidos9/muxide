@@ -32,9 +32,16 @@ async fn pty_manager(mut p: Pty, tx: Sender<Vec<u8>>, mut stdin_rx: Receiver<Mes
                 let mut res = false;
 
                 loop {
-                    if poll::poll(&mut [pfd], POLL_TIMEOUT_MS).unwrap() != 0 {
-                        res = true;
-                        break;
+                    match poll::poll(&mut [pfd], POLL_TIMEOUT_MS) {
+                        Ok(poll_response) => {
+                            // If we get 0, that means the call timed out, a negative value is an error
+                            // in my understanding but nix, I believe should handle that as an error
+                            if poll_response > 0 {
+                                res = true;
+                                break;
+                            }
+                        }
+                        Err(e) => (), // TODO: Work out error handling
                     }
                 }
 
@@ -106,7 +113,7 @@ pub struct LogicManager {
     single_key_command: bool,
     config: Config,
     connection_manager: ChannelController,
-    input_manager: InputManager,
+    _input_manager: InputManager,
     next_panel_id: usize,
     close_handles: Vec<(usize, JoinHandle<()>)>,
 }
@@ -131,7 +138,7 @@ impl LogicManager {
             selected_panel: None,
             panels: Vec::new(),
             connection_manager,
-            input_manager,
+            _input_manager: input_manager,
             display,
             next_panel_id: 0,
             halt_execution: false,
@@ -141,25 +148,51 @@ impl LogicManager {
     }
 
     /// Start the main event loop, essentially the main application logic.
-    pub async fn start_event_loop(mut self) {
+    pub async fn start_event_loop(mut self) -> Result<(), String> {
         loop {
-            self.display.render().unwrap();
+            if let Err(e) = self.display.render() {
+                if e.should_terminate() {
+                    self.shutdown().await;
+                    break;
+                } else {
+                    self.display.set_error_message(e.description());
+                }
+            }
 
             let res = self.connection_manager.wait_for_message().await;
 
             match res {
                 Either::Left(res) => {
                     if res.id.is_none() {
-                        self.handle_stdin(res.bytes).await;
+                        if let Err(e) = self.handle_stdin(res.bytes).await {
+                            if e.should_terminate() {
+                                self.shutdown().await;
+                                break;
+                            } else {
+                                self.display.set_error_message(e.description());
+                            }
+                        } else {
+                            self.display.clear_error_message();
+                        }
                     } else {
                         self.handle_panel_output(res.id.unwrap(), res.bytes);
                     }
                 }
                 Either::Right(id) => {
                     if id.is_none() {
-                        panic!("The stdin thread has closed. An unknown error occurred.");
+                        self.shutdown().await;
+                        return Err(
+                            "The stdin thread was closed. An unknown error occurred.".to_string()
+                        );
                     } else {
-                        self.remove_panel(id.unwrap()).unwrap();
+                        if let Err(e) = self.remove_panel(id.unwrap()) {
+                            if e.should_terminate() {
+                                self.shutdown().await;
+                                break;
+                            } else {
+                                self.display.set_error_message(e.description());
+                            }
+                        }
                     }
                 }
             }
@@ -169,23 +202,26 @@ impl LogicManager {
                 break;
             }
         }
+
+        return Ok(());
     }
 
-    async fn handle_stdin(&mut self, mut bytes: Vec<u8>) {
+    async fn handle_stdin(&mut self, mut bytes: Vec<u8>) -> Result<(), MuxideError> {
         if bytes.is_empty() {
-            return;
+            return Ok(());
         }
 
         if self.single_key_command {
             let ch = bytes.remove(0) as char;
-            let cmd = self.process_single_key_command(ch).unwrap();
-            self.execute_command(&cmd);
-
             self.single_key_command = false;
+
+            let cmd = self.process_single_key_command(ch)?;
+            self.execute_command(&cmd)?;
         }
 
+        // If there was a number of bytes built-up deal with them still.
         if bytes.is_empty() {
-            return;
+            return Ok(());
         }
 
         let event = match event::parse_event(
@@ -193,25 +229,27 @@ impl LogicManager {
             &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b)),
         ) {
             Ok(e) => e,
-            Err(_) => return,
+            Err(e) => {
+                return Err(ErrorType::EventParsingError {
+                    message: format!("{}", e),
+                }
+                .into_error())
+            }
         };
 
-        if self.shortcut(&event) {
-            return;
-        } else {
+        if !self.shortcut(&event)? {
             match self.selected_panel {
                 Some(id) => {
-                    self.connection_manager
-                        .write_bytes(id, bytes)
-                        .await
-                        .unwrap();
+                    self.connection_manager.write_bytes(id, bytes).await?;
                 }
                 None => (),
             }
         }
+
+        return Ok(());
     }
 
-    fn shortcut(&mut self, event: &Event) -> bool {
+    fn shortcut(&mut self, event: &Event) -> Result<bool, MuxideError> {
         if let Event::Key(k) = event {
             if let Some(k) = self
                 .config
@@ -219,13 +257,13 @@ impl LogicManager {
                 .command_for_shortcut(k)
                 .map(|cmd| cmd.clone())
             {
-                self.execute_command(&k);
-                return true;
+                self.execute_command(&k)?;
+                return Ok(true);
             } else {
-                return false;
+                return Ok(false);
             }
         } else {
-            return false;
+            return Ok(false);
         }
     }
 
@@ -250,10 +288,11 @@ impl LogicManager {
 
     fn open_new_panel(&mut self) -> Result<(), MuxideError> {
         let id = self.get_next_id();
+
         let (tx, stdin_rx) = self.connection_manager.new_channel(id);
         let pty = Pty::open(self.config.get_panel_init_command())?;
 
-        let mut new_sizes = self.display.open_new_panel(id)?;
+        let new_sizes = self.display.open_new_panel(id)?;
         let new_panel_size = new_sizes.last().unwrap().1;
         let parser = Parser::new(
             new_panel_size.get_rows(),

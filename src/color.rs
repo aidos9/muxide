@@ -24,8 +24,7 @@ pub struct Color {
 }
 
 impl Color {
-    #[allow(dead_code)]
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
         return Self { r, g, b };
     }
 

@@ -30,10 +30,6 @@ impl Size {
         };
     }
 
-    pub fn get_max(&self) -> Point<u16> {
-        return Point::new_origin(self.cols, self.rows, (1, 1));
-    }
-
     pub fn get_cols(&self) -> u16 {
         return self.cols;
     }
@@ -57,6 +53,7 @@ impl Sub for Size {
 
 impl<T: PrimInt + Unsigned + Zero> Point<T> {
     /// Treats (0, 0) as the origin.
+    #[allow(dead_code)]
     pub fn new(column: T, row: T) -> Self {
         return Self {
             x: column,
@@ -74,6 +71,7 @@ impl<T: PrimInt + Unsigned + Zero> Point<T> {
         };
     }
 
+    #[allow(dead_code)]
     pub fn get_origin(&self) -> (T, T) {
         return self.origin;
     }

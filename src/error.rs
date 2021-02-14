@@ -69,6 +69,10 @@ pub enum ErrorType {
         description: String,
     },
 
+    EventParsingError {
+        message: String,
+    },
+
     DisplayNotRunningError,
     InputManagerRunningError,
 }
@@ -145,6 +149,10 @@ impl MuxideError {
 
             ErrorType::CommandError { description } => {
                 return Self::new_command_error(description);
+            }
+
+            ErrorType::EventParsingError { message } => {
+                return Self::new_event_parsing_error(message);
             }
         };
     }
@@ -315,6 +323,17 @@ impl MuxideError {
         return Self {
             debug_description: description.clone(),
             description,
+            terminate: false,
+        };
+    }
+
+    fn new_event_parsing_error(message: String) -> Self {
+        return Self {
+            debug_description: format!(
+                "Error occurred whilst processing a vt100 event: {}",
+                message
+            ),
+            description: "Failed to process a terminal event.".to_string(),
             terminate: false,
         };
     }

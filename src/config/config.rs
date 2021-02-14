@@ -1,5 +1,5 @@
-use super::Color;
 use super::Keys;
+use crate::Color;
 use serde::Deserialize;
 use std::time::Duration;
 

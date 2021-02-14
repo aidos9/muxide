@@ -2,7 +2,8 @@ use super::layout::Layout;
 use super::panel::PanelPtr;
 use crate::error::{ErrorType, MuxideError};
 use crate::geometry::Size;
-use crate::Config;
+use crate::{Color, Config};
+use crossterm::style::Color as CrosstermColor;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
 use std::io::{stdout, Stdout, Write};
@@ -15,11 +16,13 @@ pub struct Display {
     layout: Layout,
     completed_initialization: bool,
     selected_workspace: u8,
+    error_message: Option<String>,
 }
 
 impl Display {
     /// The text that is displayed when there are no open panels.
     const EMPTY_TEXT: &'static str = "No Panels Open";
+    const ERROR_COLOR: Color = Color::new(255, 105, 97);
 
     /// Create a new "display" instance.
     pub fn new(config: Config) -> Self {
@@ -30,6 +33,7 @@ impl Display {
             selected_panel: None,
             completed_initialization: false,
             selected_workspace: 0,
+            error_message: None,
         };
     }
 
@@ -146,14 +150,11 @@ impl Display {
                         Size::new(0, 0)
                     });
                 let mut panel;
-                let other_id;
 
                 if left.get_id() == id {
                     panel = right.clone();
-                    other_id = left.get_id();
                 } else if right.get_id() == id {
                     panel = left.clone();
-                    other_id = right.get_id();
                 } else {
                     return Err(ErrorType::NoPanelWithIDError { id }.into_error());
                 }
@@ -303,6 +304,15 @@ impl Display {
                 }
             }
             _ => (),
+        }
+
+        if self.error_message.is_some() {
+            self.queue_error_message(&mut stdout, &size).map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
         }
 
         self.reset_cursor(&mut stdout, &size).map_err(|e| {
@@ -576,7 +586,6 @@ impl Display {
         return Ok(());
     }
 
-    #[inline]
     fn queue_workspaces_line(
         &self,
         stdout: &mut Stdout,
@@ -660,6 +669,45 @@ impl Display {
         return Ok(());
     }
 
+    fn queue_error_message(
+        &self,
+        stdout: &mut Stdout,
+        terminal_size: &Size,
+    ) -> Result<(), crossterm::ErrorKind> {
+        if let Some(text) = self.error_message.as_ref() {
+            let error_text;
+
+            if text.len() > terminal_size.get_cols() as usize {
+                error_text = format!(
+                    "{}...",
+                    text.chars().collect::<Vec<char>>()[..terminal_size.get_cols() as usize - 3]
+                        .iter()
+                        .collect::<String>()
+                );
+            } else {
+                let lhs = (terminal_size.get_cols() as usize - text.len()) / 2;
+                error_text = format!(
+                    "{}{}{}",
+                    (0..lhs).map(|_| ' ').collect::<String>(),
+                    text,
+                    (0..terminal_size.get_cols() as usize - text.len() - lhs)
+                        .map(|_| ' ')
+                        .collect::<String>(),
+                );
+            }
+
+            queue!(
+                stdout,
+                cursor::MoveTo(0, terminal_size.get_rows()),
+                style::SetBackgroundColor(Self::ERROR_COLOR.crossterm_color(CrosstermColor::Red)),
+                style::SetForegroundColor(CrosstermColor::White),
+                style::Print(error_text),
+            )?;
+        }
+
+        return Ok(());
+    }
+
     fn reset_stdout_style(stdout: &mut Stdout) -> Result<(), MuxideError> {
         queue!(stdout, style::ResetColor).map_err(|e| {
             ErrorType::QueueExecuteError {
@@ -679,6 +727,14 @@ impl Display {
         }
 
         return None;
+    }
+
+    pub fn set_error_message(&mut self, message: String) {
+        self.error_message = Some(message);
+    }
+
+    pub fn clear_error_message(&mut self) {
+        self.error_message = None;
     }
 
     pub fn set_selected_panel(&mut self, id: Option<usize>) {
