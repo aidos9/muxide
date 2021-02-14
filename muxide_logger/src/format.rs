@@ -1,9 +1,20 @@
-use super::{FormatItem, Formatter};
 use chrono::{DateTime, Utc};
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct FormatterBuilder {
+pub enum FormatItem {
+    LineNumber,
+    ThreadID,
+    ModulePath,
+    LogLevel,
+    LogString,
+    TimeString,
+    CustomCharacter(char),
+    CustomString(String),
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct Format {
     items: Vec<FormatItem>,
     separator: Option<char>,
     thread_id: Option<usize>,
@@ -14,7 +25,7 @@ pub struct FormatterBuilder {
     custom_time: Option<DateTime<Utc>>,
 }
 
-impl FormatterBuilder {
+impl Format {
     pub fn new() -> Self {
         return Self {
             items: Vec::new(),
@@ -26,6 +37,10 @@ impl FormatterBuilder {
             module_path: None,
             custom_time: None,
         };
+    }
+
+    pub fn build_string(self, log_message: &str) {
+
     }
 
     pub fn set_separator(mut self, separator: char) -> Self {
@@ -85,7 +100,7 @@ impl FormatterBuilder {
     }
 }
 
-impl Index<usize> for FormatterBuilder {
+impl Index<usize> for Format {
     type Output = FormatItem;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -93,7 +108,7 @@ impl Index<usize> for FormatterBuilder {
     }
 }
 
-impl IndexMut<usize> for FormatterBuilder {
+impl IndexMut<usize> for Format {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         return self.items.index_mut(index);
     }
