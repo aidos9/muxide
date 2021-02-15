@@ -1,4 +1,4 @@
-use crate::{Formatter, Log, LogLevel};
+use crate::{Format, Log, LogLevel};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 
@@ -8,17 +8,20 @@ pub struct FileLogger {
     file: Arc<Mutex<File>>,
 }
 
-pub struct StringLogger;
+pub struct StringLogger {
+    format: Format,
+}
+
+impl StringLogger {
+    pub fn new(format: Format) -> Self {
+        return Self { format };
+    }
+}
 
 impl Log for StringLogger {
     type ReturnType = String;
 
-    fn log_message(
-        &self,
-        log_level: LogLevel,
-        message: String,
-        mut formatter: Formatter,
-    ) -> Self::ReturnType {
-        panic!("{:?}, {:?}", formatter, message);
+    fn log_message(&self, log_level: LogLevel, message: &str) -> Self::ReturnType {
+        panic!("{:?}", message);
     }
 }
