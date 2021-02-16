@@ -541,7 +541,7 @@ dependencies = [
  "futures 0.3.12",
  "lazy_static 1.4.0",
  "libc",
- "muxide_logger",
+ "muxide_logging",
  "nix",
  "num-traits",
  "paste",
@@ -554,10 +554,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "muxide_logger"
+name = "muxide_logging"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "lazy_static 1.4.0",
+ "thread-id",
 ]
 
 [[package]]
@@ -1024,6 +1026,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "thread-id"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
+dependencies = [
+ "libc",
+ "redox_syscall 0.1.57",
+ "winapi",
 ]
 
 [[package]]
