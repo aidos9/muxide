@@ -23,4 +23,4 @@ dirs = "3.0"
 either = "1.6"
 terminfo = "0.7"
 lazy_static = "1.4"
-muxide_logging = { path = "muxide_logging" }
+muxide_logging = { git = "https://github.com/aidos9/muxide_logging", branch = "main" }
