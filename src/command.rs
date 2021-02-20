@@ -18,9 +18,7 @@ pub enum Command {
     IdentifyPanelsCommand,
     MapCommand(Key, Box<Command>),
     UnMapCommand(Key),
-    /*
-    ChangeLayout(String),
-     */
+    SwapLayout,
     QuitCommand,
 }
 
@@ -43,6 +41,7 @@ impl Command {
             Self::IdentifyPanelsCommand => "Identify",
             Self::MapCommand(_, _) => "Map",
             Self::UnMapCommand(_) => "UnMap",
+            Self::SwapLayout => "SwapLayout",
             Self::QuitCommand => "Quit",
         };
     }
@@ -64,6 +63,7 @@ impl Command {
             "openpanel" => Self::OpenPanelCommand,
             "identify" => Self::IdentifyPanelsCommand,
             "quit" => Self::QuitCommand,
+            "SwapLayout" => Self::SwapLayout,
             "closepanel" => {
                 if args.len() != 1 {
                     return Err(

@@ -31,6 +31,11 @@ const fn default_intersection_character() -> char {
     return '+';
 }
 
+#[inline]
+const fn serde_default_1() -> usize {
+    return 1;
+}
+
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -56,6 +61,9 @@ pub struct Environment {
     selected_workspace_color: Color,
     #[serde(default = "serde_default_as_true")]
     show_workspaces: bool,
+    #[serde(default = "serde_default_1")]
+    log_level: usize,
+    log_file: Option<String>,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize)]
@@ -99,6 +107,10 @@ impl Config {
         return &self.environment;
     }
 
+    pub fn get_environment_mut_ref(&mut self) -> &mut Environment {
+        return &mut self.environment;
+    }
+
     pub fn get_panel_init_command(&self) -> &String {
         return &self.environment.panel_init_command;
     }
@@ -140,6 +152,22 @@ impl Environment {
     pub fn selected_workspace_color(&self) -> Color {
         return self.selected_workspace_color;
     }
+
+    pub fn set_log_file(&mut self, file: String) {
+        self.log_file = Some(file);
+    }
+
+    pub fn log_file(&self) -> &Option<String> {
+        return &self.log_file;
+    }
+
+    pub fn set_log_level(&mut self, level: usize) {
+        self.log_level = level;
+    }
+
+    pub fn log_level(&self) -> usize {
+        return self.log_level;
+    }
 }
 
 impl Default for Config {
@@ -163,6 +191,8 @@ impl Default for Environment {
             selected_panel_color: Color::default(),
             selected_workspace_color: Color::default(),
             show_workspaces: true,
+            log_level: 1,
+            log_file: None,
         };
     }
 }
@@ -216,7 +246,7 @@ mod tests {
 
         let mut comp = Config::default();
         comp.environment.panel_init_command = String::from("/usr/local/bin/fish");
-        comp.borders.color = Color::blue();
+        comp.borders.color = Color::BLUE;
         comp.borders.horizontal_character = ' ';
         comp.borders.intersection_character = '~';
         comp.keys

@@ -8,6 +8,17 @@ use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
 use std::io::{stdout, Stdout, Write};
 
+macro_rules! queue_map_err {
+    ($($v:expr),*) => {
+        queue!($($v),*).map_err(|e| {
+            ErrorType::QueueExecuteError {
+                reason: e.to_string(),
+            }
+            .into_error()
+        });
+    };
+}
+
 /// Manages the different panels and renders to the terminal the correct output and layout.
 pub struct Display {
     config: Config,
@@ -253,15 +264,13 @@ impl Display {
                 let contents = panel.get_content();
 
                 for (r, row) in contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(0, r as u16 + 2)).map_err(|e| {
-                        ErrorType::QueueExecuteError {
-                            reason: e.to_string(),
-                        }
-                        .into_error()
-                    })?;
+                    queue_map_err!(stdout, cursor::MoveTo(0, r as u16 + 2))?;
+
                     stdout
                         .write(&row)
                         .map_err(|e| ErrorType::new_display_qe_error(e))?;
+
+                    queue_map_err!(stdout, style::ResetColor)?;
                 }
             }
             Layout::HorizontalStack { left, right } => {
@@ -269,38 +278,28 @@ impl Display {
                 let right_contents = right.get_content();
 
                 for (r, row) in left_contents.into_iter().enumerate() {
-                    queue!(stdout, cursor::MoveTo(0, r as u16 + 2)).map_err(|e| {
-                        ErrorType::QueueExecuteError {
-                            reason: e.to_string(),
-                        }
-                        .into_error()
-                    })?;
+                    queue_map_err!(stdout, cursor::MoveTo(0, r as u16 + 2))?;
+
                     stdout
                         .write(&row)
                         .map_err(|e| ErrorType::new_display_qe_error(e))?;
+
+                    queue_map_err!(stdout, style::ResetColor)?;
                 }
 
-                queue!(stdout, style::ResetColor).map_err(|e| {
-                    ErrorType::QueueExecuteError {
-                        reason: e.to_string(),
-                    }
-                    .into_error()
-                })?;
+                queue_map_err!(stdout, style::ResetColor)?;
 
                 for (r, row) in right_contents.into_iter().enumerate() {
-                    queue!(
+                    queue_map_err!(
                         stdout,
                         cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 2)
-                    )
-                    .map_err(|e| {
-                        ErrorType::QueueExecuteError {
-                            reason: e.to_string(),
-                        }
-                        .into_error()
-                    })?;
+                    )?;
+
                     stdout
                         .write(&row)
                         .map_err(|e| ErrorType::new_display_qe_error(e))?;
+
+                    queue_map_err!(stdout, style::ResetColor)?;
                 }
             }
             _ => (),
@@ -352,16 +351,10 @@ impl Display {
             Some(panel) => {
                 let loc = panel.get_cursor_position();
 
-                queue!(
+                queue_map_err!(
                     stdout,
                     cursor::MoveTo(loc.column(), loc.row()) // Column, row
-                )
-                .map_err(|e| {
-                    ErrorType::QueueExecuteError {
-                        reason: e.to_string(),
-                    }
-                    .into_error()
-                })?;
+                )?;
 
                 if panel.get_hide_cursor() {
                     execute!(stdout, cursor::Hide).map_err(|e| {
@@ -432,7 +425,7 @@ impl Display {
             // Print the bottom row
 
             if vertical_line {
-                queue!(
+                queue_map_err!(
                     stdout,
                     cursor::MoveTo(0, 1),
                     style::Print(intersection_character),
@@ -447,16 +440,10 @@ impl Display {
                             .to_string()
                             .repeat((terminal_size.get_cols() as usize - 2) - center_col as usize)
                     ),
-                    style::Print(intersection_character),
-                )
-                .map_err(|e| {
-                    ErrorType::QueueExecuteError {
-                        reason: e.to_string(),
-                    }
-                    .into_error()
-                })?;
+                    style::Print(intersection_character)
+                )?;
             } else {
-                queue!(
+                queue_map_err!(
                     stdout,
                     cursor::MoveTo(0, 1),
                     style::Print(intersection_character),
@@ -465,14 +452,8 @@ impl Display {
                             .to_string()
                             .repeat(terminal_size.get_cols() as usize - 2)
                     ),
-                    style::Print(intersection_character),
-                )
-                .map_err(|e| {
-                    ErrorType::QueueExecuteError {
-                        reason: e.to_string(),
-                    }
-                    .into_error()
-                })?;
+                    style::Print(intersection_character)
+                )?;
             }
         }
 
@@ -519,17 +500,11 @@ impl Display {
         Self::reset_stdout_style(stdout)?;
 
         for r in starting_row..terminal_size.get_rows() {
-            queue!(
+            queue_map_err!(
                 stdout,
                 cursor::MoveTo(col, r),
                 style::Print(vertical_character)
-            )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+            )?;
         }
 
         return Ok(());
@@ -548,7 +523,7 @@ impl Display {
         Self::reset_stdout_style(stdout)?;
 
         if let Some(col) = center_intersection {
-            queue!(
+            queue_map_err!(
                 stdout,
                 cursor::MoveTo(0, row),
                 style::Print(horizontal_character.to_string().repeat(col as usize)),
@@ -557,16 +532,10 @@ impl Display {
                     horizontal_character
                         .to_string()
                         .repeat((terminal_size.get_cols() - col - 1) as usize)
-                ),
-            )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+                )
+            )?;
         } else {
-            queue!(
+            queue_map_err!(
                 stdout,
                 cursor::MoveTo(0, row),
                 style::Print(
@@ -574,13 +543,7 @@ impl Display {
                         .to_string()
                         .repeat(terminal_size.get_cols() as usize)
                 )
-            )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+            )?;
         }
 
         return Ok(());
@@ -709,12 +672,7 @@ impl Display {
     }
 
     fn reset_stdout_style(stdout: &mut Stdout) -> Result<(), MuxideError> {
-        queue!(stdout, style::ResetColor).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+        queue_map_err!(stdout, style::ResetColor)?;
 
         return Ok(());
     }

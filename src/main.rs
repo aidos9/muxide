@@ -1,6 +1,8 @@
 use clap::{App, Arg};
 use crossterm::{execute, terminal};
 use muxide::{Config, LogicManager};
+use muxide_logging::log::LogLevel;
+use muxide_logging::{error, info, warning};
 use std::fs::File;
 use std::io::{stdout, Read};
 use std::path::Path;
@@ -13,6 +15,9 @@ fn main() {
             Arg::with_name("log_file")
                 .short("f")
                 .long("log_file")
+                .takes_value(true)
+                .max_values(1)
+                .required(false)
                 .help("Sets the file to write logging output to."),
         )
         .arg(
@@ -20,13 +25,64 @@ fn main() {
                 .short("l")
                 .long("log_level")
                 .requires("log_file")
-                .default_value("1")
+                .takes_value(true)
+                .max_values(1)
                 .possible_values(&["1", "2", "3"])
-                .help("Sets the level of logging to enable"),
+                .help("Sets the level of logging to enable."),
         )
         .get_matches();
 
-    let config = load_config();
+    let mut config = load_config();
+
+    if let Some(log_file) = matches.value_of("log_file") {
+        config
+            .get_environment_mut_ref()
+            .set_log_file(log_file.to_string());
+    }
+
+    if let Some(log_level) = matches.value_of("log_level") {
+        if let Ok(log_level) = log_level.parse() {
+            config.get_environment_mut_ref().set_log_level(log_level);
+        } else {
+            eprintln!("Expected a value of 1, 2 or 3 for the log level.");
+            exit(1);
+        }
+    }
+
+    if let Some(f) = config.get_environment_ref().log_file() {
+        if let Err(e) = muxide_logging::set_output_file(f) {
+            eprintln!(
+                "Failed to open '{}' for logging. Error description: {}",
+                f, e
+            );
+            exit(1);
+        }
+
+        match config.get_environment_ref().log_level() {
+            0 | 1 => {
+                if let Err(e) = muxide_logging::restrict_log_levels(&[
+                    LogLevel::StateChange,
+                    LogLevel::Information,
+                    LogLevel::Warning,
+                ]) {
+                    eprintln!("Failed to set log level. Error description: {}", e);
+                    exit(1);
+                }
+            }
+            2 => {
+                if let Err(e) = muxide_logging::restrict_log_levels(&[
+                    LogLevel::StateChange,
+                    LogLevel::Information,
+                ]) {
+                    eprintln!("Failed to set log level. Error description: {}", e);
+                    exit(1);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    info!("Completed config load.");
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
@@ -37,23 +93,34 @@ fn main() {
     rt.enter();
     if let Some(err) = rt.block_on(async { muxide_start(config).await }) {
         eprintln!("Terminating with error: {}", err);
+        error!(format!("Terminated with error: {}", err));
     }
 }
 
 async fn muxide_start(config: Config) -> Option<String> {
     // We don't care about errors that happen with this function, if it fails that's ok.
-    let _ = execute!(stdout(), terminal::EnterAlternateScreen);
+    if let Err(e) = execute!(stdout(), terminal::EnterAlternateScreen) {
+        warning!(format!(
+            "Failed to enter alternate tty screen. Reason: {}",
+            e
+        ));
+    }
 
     let logic_manager = LogicManager::new(config).unwrap();
     let err = logic_manager.start_event_loop().await.err();
 
     // We don't care about errors that happen with this function, if it fails that's ok.
-    let _ = execute!(
+    if let Err(e) = execute!(
         stdout(),
         crossterm::cursor::Show,
         crossterm::style::ResetColor,
         terminal::LeaveAlternateScreen
-    );
+    ) {
+        warning!(format!(
+            "Failed to leave alternate tty screen. Reason: {}",
+            e
+        ));
+    }
 
     return err;
 }

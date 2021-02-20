@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn test_from_string_red() {
         let input = "red".to_string();
-        assert_eq!(Color::red(), Color::try_from(input).unwrap());
+        assert_eq!(Color::RED, Color::try_from(input).unwrap());
     }
 
     #[test]
