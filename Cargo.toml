@@ -10,7 +10,7 @@ vt100 = { path = "vt100-rust" }
 crossterm = "0.19"
 termion = "1.5"
 num-traits = "0.2"
-nix = "0.19"
+nix = "0.20"
 libc = "0.2"
 chan-signal = "0.3"
 tokio = { version = "1.1", features = ["full"] }

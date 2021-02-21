@@ -193,6 +193,52 @@ impl Display {
         return Ok(changed);
     }
 
+    /// Switch between the two possible 2-panel layouts.
+    pub fn swap_layout(&mut self) -> Result<Vec<(usize, Size)>, MuxideError> {
+        if self.layout.is_horizontal_stack() {
+            return self.change_layout_vertical();
+        } else if self.layout.is_vertical_stack() {
+            return self.change_layout_horizontal();
+        } else {
+            return Ok(Vec::new());
+        }
+    }
+
+    fn change_layout_vertical(&mut self) -> Result<Vec<(usize, Size)>, MuxideError> {
+        let changed;
+
+        let new_layout = match &mut self.layout {
+            Layout::HorizontalStack { left, right } => {
+                let term_size = Self::get_terminal_size()?;
+                let size = term_size - Size::new(3, 0);
+                let mut upper_size = size;
+                upper_size.divide_height_by_const(2);
+                let lower_size =
+                    Size::new(size.get_rows() - upper_size.get_rows(), size.get_cols());
+
+                changed = vec![(left.get_id(), upper_size), (right.get_id(), lower_size)];
+
+                left.set_size(upper_size);
+                right.set_size(lower_size);
+                right.set_location((0, 3 + upper_size.get_rows()));
+
+                Layout::VerticalStack {
+                    upper: left.clone(),
+                    lower: right.clone(),
+                }
+            }
+            _ => return Ok(Vec::new()),
+        };
+
+        self.layout = new_layout;
+
+        return Ok(changed);
+    }
+
+    fn change_layout_horizontal(&mut self) -> Result<Vec<(usize, Size)>, MuxideError> {
+        todo!();
+    }
+
     // Initialise a panel by creating a new instance and copying the pointer into the internal tracker.
     fn init_panel(&mut self, id: usize, size: Size, location: (u16, u16)) -> PanelPtr {
         let panel = PanelPtr::new(id, size, location);
@@ -293,6 +339,35 @@ impl Display {
                     queue_map_err!(
                         stdout,
                         cursor::MoveTo(left.get_size().get_cols() + 2, r as u16 + 2)
+                    )?;
+
+                    stdout
+                        .write(&row)
+                        .map_err(|e| ErrorType::new_display_qe_error(e))?;
+
+                    queue_map_err!(stdout, style::ResetColor)?;
+                }
+            }
+            Layout::VerticalStack { lower, upper } => {
+                let lower_contents = lower.get_content();
+                let upper_contents = upper.get_content();
+
+                for (r, row) in upper_contents.into_iter().enumerate() {
+                    queue_map_err!(stdout, cursor::MoveTo(0, r as u16 + 2))?;
+
+                    stdout
+                        .write(&row)
+                        .map_err(|e| ErrorType::new_display_qe_error(e))?;
+
+                    queue_map_err!(stdout, style::ResetColor)?;
+                }
+
+                queue_map_err!(stdout, style::ResetColor)?;
+
+                for (r, row) in lower_contents.into_iter().enumerate() {
+                    queue_map_err!(
+                        stdout,
+                        cursor::MoveTo(0, upper.get_size().get_rows() + 3 + r as u16)
                     )?;
 
                     stdout

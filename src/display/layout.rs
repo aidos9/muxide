@@ -36,4 +36,18 @@ impl Layout {
             Layout::VerticalStack { .. } | Layout::QuadStack { .. } => true,
         };
     }
+
+    pub fn is_horizontal_stack(&self) -> bool {
+        return match self {
+            Layout::HorizontalStack { .. } => true,
+            _ => false,
+        };
+    }
+
+    pub fn is_vertical_stack(&self) -> bool {
+        return match self {
+            Layout::VerticalStack { .. } => true,
+            _ => false,
+        };
+    }
 }

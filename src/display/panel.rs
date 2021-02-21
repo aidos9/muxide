@@ -76,7 +76,7 @@ impl Panel {
         };
     }
 
-    /// Set the origin of the panel's top left corner in the global display.
+    /// Set the origin of the panel's top left corner in the global display. (col, row).
     pub fn set_location(&mut self, location: (u16, u16)) {
         self.location = location;
     }

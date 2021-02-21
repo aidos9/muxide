@@ -41,6 +41,10 @@ impl Size {
     pub fn divide_width_by_const(&mut self, constant: u16) {
         self.cols /= constant;
     }
+
+    pub fn divide_height_by_const(&mut self, constant: u16) {
+        self.rows /= constant;
+    }
 }
 
 impl Sub for Size {
