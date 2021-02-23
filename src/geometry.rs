@@ -1,7 +1,7 @@
 use nix::pty::Winsize;
 use num_traits::{PrimInt, Unsigned, Zero};
 use std::fmt::Display;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Size {
@@ -55,6 +55,12 @@ impl Sub for Size {
     }
 }
 
+impl std::fmt::Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "{{width: {}, height: {}}}", self.cols, self.rows);
+    }
+}
+
 impl<T: PrimInt + Unsigned + Zero> Point<T> {
     /// Treats (0, 0) as the origin.
     #[allow(dead_code)]
@@ -97,8 +103,18 @@ impl<T: PrimInt + Unsigned + Zero + Display> Display for Point<T> {
     }
 }
 
-impl std::fmt::Display for Size {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "{{width: {}, height: {}}}", self.cols, self.rows);
+impl<T: PrimInt + Unsigned + Zero> Add for Point<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        return Self::new(self.x + rhs.x, self.y + rhs.y);
+    }
+}
+
+impl<T: PrimInt + Unsigned + Zero> Sub for Point<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        return Self::new(self.x - rhs.x, self.y - rhs.y);
     }
 }

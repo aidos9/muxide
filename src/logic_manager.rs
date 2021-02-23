@@ -416,8 +416,13 @@ impl LogicManager {
                 self.selected_panel = Some(*id);
                 self.display.set_selected_panel(Some(*id));
             }
-            Command::SwapLayout => {
-                let new_sizes = self.display.swap_layout()?;
+            Command::SubdivideSelectedVertical => {
+                let new_sizes = self.display.subdivide_selected_panel_vertical()?;
+
+                futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+            }
+            Command::SubdivideSelectedHorizontal => {
+                let new_sizes = self.display.subdivide_selected_panel_horizontal()?;
 
                 futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
             }

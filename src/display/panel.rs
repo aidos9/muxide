@@ -31,10 +31,11 @@ macro_rules! wrap_panel_method {
     };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// A wrapper of the panel struct that acts as a pointer
 pub struct PanelPtr(Rc<RefCell<Panel>>);
 
+#[derive(PartialEq, Debug)]
 /// A panel is all the information required for a process.
 struct Panel {
     id: usize,
@@ -47,6 +48,7 @@ struct Panel {
 }
 
 impl PanelPtr {
+    /// location: (col, row). The location in the global space of the top left (the first) cell
     pub fn new(id: usize, size: Size, location: (u16, u16)) -> Self {
         return Self(Rc::new(RefCell::new(Panel::new(id, size, location))));
     }

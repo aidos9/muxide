@@ -75,6 +75,9 @@ pub enum ErrorType {
 
     DisplayNotRunningError,
     InputManagerRunningError,
+    InvalidSubdivisionState,
+    NoAvailableSubdivision,
+    FailedSubdivision,
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -153,6 +156,22 @@ impl MuxideError {
 
             ErrorType::EventParsingError { message } => {
                 return Self::new_event_parsing_error(message);
+            }
+
+            ErrorType::InvalidSubdivisionState => {
+                return Self::new_invalid_subdivision_state_error();
+            }
+
+            ErrorType::NoAvailableSubdivision => {
+                return Self::new_no_available_subdivision_error();
+            }
+
+            ErrorType::FailedSubdivision => {
+                return Self {
+                    debug_description: "Failed to subdivide panel.".to_string(),
+                    description: "Failed to subdivide panel.".to_string(),
+                    terminate: false,
+                };
             }
         };
     }
@@ -334,6 +353,22 @@ impl MuxideError {
                 message
             ),
             description: "Failed to process a terminal event.".to_string(),
+            terminate: false,
+        };
+    }
+
+    fn new_invalid_subdivision_state_error() -> Self {
+        return Self {
+            debug_description: "The subdivision is in an invalid state.".to_string(),
+            description: "Failed to render due to invalid subdivision state.".to_string(),
+            terminate: false,
+        };
+    }
+
+    fn new_no_available_subdivision_error() -> Self {
+        return Self {
+            debug_description: "No empty subdivisions.".to_string(),
+            description: "No empty subdivisions".to_string(),
             terminate: false,
         };
     }

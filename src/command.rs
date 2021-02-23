@@ -18,7 +18,8 @@ pub enum Command {
     IdentifyPanelsCommand,
     MapCommand(Key, Box<Command>),
     UnMapCommand(Key),
-    SwapLayout,
+    SubdivideSelectedVertical,
+    SubdivideSelectedHorizontal,
     QuitCommand,
 }
 
@@ -41,7 +42,8 @@ impl Command {
             Self::IdentifyPanelsCommand => "Identify",
             Self::MapCommand(_, _) => "Map",
             Self::UnMapCommand(_) => "UnMap",
-            Self::SwapLayout => "SwapLayout",
+            Self::SubdivideSelectedVertical => "SubdivideSelectedVertical",
+            Self::SubdivideSelectedHorizontal => "SubdivideSelectedHorizontal",
             Self::QuitCommand => "Quit",
         };
     }
@@ -63,7 +65,8 @@ impl Command {
             "openpanel" => Self::OpenPanelCommand,
             "identify" => Self::IdentifyPanelsCommand,
             "quit" => Self::QuitCommand,
-            "SwapLayout" => Self::SwapLayout,
+            "subdivideselectedhorizontal" => Self::SubdivideSelectedHorizontal,
+            "subdivideselectedvertical" => Self::SubdivideSelectedVertical,
             "closepanel" => {
                 if args.len() != 1 {
                     return Err(

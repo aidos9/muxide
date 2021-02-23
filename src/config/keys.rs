@@ -138,7 +138,10 @@ impl Default for Keys {
         n.single_key_map.insert('n', Command::OpenPanelCommand);
         n.single_key_map
             .insert('q', Command::CloseMostRecentPanelCommand);
-        n.single_key_map.insert('s', Command::SwapLayout);
+        n.single_key_map
+            .insert('v', Command::SubdivideSelectedVertical);
+        n.single_key_map
+            .insert('h', Command::SubdivideSelectedHorizontal);
 
         return n;
     }
