@@ -1,7 +1,10 @@
-use super::panel::PanelPtr;
 use super::subdivision::{SubDivision, SubDivisionSplit};
-use crate::error::{ErrorType, MuxideError};
+use super::{panel::PanelPtr, subdivision::SubdivisionPath};
 use crate::geometry::{Point, Size};
+use crate::{
+    error::{ErrorType, MuxideError},
+    geometry::Direction,
+};
 use crate::{Color, Config};
 use crossterm::style::Color as CrosstermColor;
 use crossterm::terminal::ClearType;
@@ -98,18 +101,28 @@ impl Display {
         return Err(ErrorType::NoPanelWithIDError { id }.into_error());
     }
 
+    pub fn open_new_panel_details(
+        &self,
+    ) -> Result<(SubdivisionPath, Size, Point<u16>), MuxideError> {
+        return self
+            .root_subdivision
+            .next_panel_details()
+            .ok_or(ErrorType::NoAvailableSubdivision.into_error());
+    }
+
     /// Opens a new panel giving it the specified id. The id should be unique but it is
     /// not enforced by this method. The method will return a vector of all the changed panels
     /// id's and new size.
-    pub fn open_new_panel(&mut self, id: usize) -> Result<Vec<(usize, Size)>, MuxideError> {
+    pub fn open_new_panel(
+        &mut self,
+        id: usize,
+        panel_path: SubdivisionPath,
+        size: Size,
+        origin: Point<u16>,
+    ) -> Result<Vec<(usize, Size)>, MuxideError> {
         if !self.completed_initialization {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
-
-        let (panel_path, size, origin) = self
-            .root_subdivision
-            .next_panel_details()
-            .ok_or(ErrorType::NoAvailableSubdivision.into_error())?;
 
         let panel = self.init_panel(id, size, (origin.column(), origin.row()));
 
@@ -124,7 +137,19 @@ impl Display {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
 
-        todo!();
+        if !self.root_subdivision.close_panel_with_id(id) {
+            panic!("No panel with an id: {}", id);
+        } else {
+            if let Some(panel) = self.selected_panel.as_ref() {
+                if panel.get_id() == id {
+                    self.selected_panel = self.panels.first().map(|p| p.clone());
+                }
+            }
+
+            self.panels.remove(self.panel_index_for_id(id).unwrap());
+
+            return Ok(Vec::new());
+        }
 
         // let mut changed = Vec::new();
 
@@ -192,6 +217,12 @@ impl Display {
         &mut self,
     ) -> Result<Vec<(usize, Size)>, MuxideError> {
         return self.subdivide_selected_panel(SubDivisionSplit::Horizontal);
+    }
+
+    pub fn focus_direction(&mut self, direction: Direction) -> Option<usize> {
+        return self
+            .root_subdivision
+            .focus_next_id(self.selected_panel.as_ref().map(|p| p.get_id())?, direction);
     }
 
     /// Subdivide the currently selected panel into two panels split with the specified line down the middle

@@ -1,6 +1,6 @@
 use super::Keys;
 use crate::Color;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[inline]
@@ -36,20 +36,20 @@ const fn serde_default_1() -> usize {
     return 1;
 }
 
-#[derive(Clone, PartialEq, Debug, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default)]
     environment: Environment,
     #[serde(default)]
-    keys: Keys,
-    #[serde(default)]
     borders: Borders,
+    #[serde(default)]
+    keys: Keys,
 
     /// Potentially can be removed
     thread_delay_period: Option<Duration>,
 }
 
-#[derive(Clone, PartialEq, Debug, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Environment {
     #[serde(default = "default_panel_init_command")]
     panel_init_command: String,
@@ -66,7 +66,7 @@ pub struct Environment {
     log_file: Option<String>,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Borders {
     #[serde(default = "default_vertical_character")]
     vertical_character: char,
@@ -119,9 +119,20 @@ impl Config {
         return toml::from_str(toml).map_err(|e| e.to_string());
     }
 
-    pub fn default_path() -> Option<String> {
+    pub fn from_json_string(json: &str) -> Result<Self, String> {
+        return serde_json::from_str(json).map_err(|e| e.to_string());
+    }
+
+    pub fn default_path(format: &str) -> Option<String> {
         let mut path = dirs::home_dir()?;
-        path.push(".config/muxide/config.toml");
+
+        if format.to_lowercase() == "toml" {
+            path.push(".config/muxide/config.toml");
+        } else if format.to_lowercase() == "json" {
+            path.push(".config/muxide/config.json");
+        } else {
+            return None;
+        }
 
         return path.to_str().map(|s| s.to_string());
     }
@@ -237,8 +248,8 @@ mod tests {
         \n\
         [[keys]]\n\
         shortcut = \"ctrl+p\"\n\
-        key = \"f\"\n\
-        command = \"FocusCommandPrompt\"\n\
+        #key = \"f\"\n\
+        command = \"SubdivideSelectedVertical\"\n\
         #args = [\"a\"]\n\
         ";
 
@@ -252,9 +263,7 @@ mod tests {
         comp.keys
             .map_shortcut(Key::Ctrl('a'), Command::OpenPanelCommand);
         comp.keys
-            .map_shortcut(Key::Ctrl('p'), Command::FocusCommandPromptCommand);
-        comp.keys
-            .map_character('f', Command::FocusCommandPromptCommand);
+            .map_shortcut(Key::Ctrl('p'), Command::SubdivideSelectedVerticalCommand);
 
         assert_eq!(conf, comp);
     }

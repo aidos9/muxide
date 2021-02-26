@@ -1,6 +1,6 @@
 use super::panel::PanelPtr;
 use crate::{
-    geometry::{Point, Size},
+    geometry::{Direction, Point, Size},
     Config, ErrorType, MuxideError,
 };
 use crossterm::{cursor, queue, style};
@@ -61,6 +61,41 @@ impl SubDivision {
         };
     }
 
+    pub fn close_panel_with_id(&mut self, id: usize) -> bool {
+        if let Some(path) = self.path_for_panel_id(id) {
+            return self.close_panel_at_path(path);
+        } else {
+            return false;
+        }
+    }
+
+    fn close_panel_at_path(&mut self, mut path: SubdivisionPath) -> bool {
+        match path.pop() {
+            Some(SubdivisionPathElement::A) => {
+                if let Some(subdiv) = self.subdiv_a.as_mut() {
+                    return subdiv.close_panel_at_path(path);
+                } else {
+                    return false;
+                }
+            }
+            Some(SubdivisionPathElement::B) => {
+                if let Some(subdiv) = self.subdiv_b.as_mut() {
+                    return subdiv.close_panel_at_path(path);
+                } else {
+                    return false;
+                }
+            }
+            None => {
+                if self.panel.is_none() {
+                    return false;
+                } else {
+                    self.panel = None;
+                    return true;
+                }
+            }
+        }
+    }
+
     pub fn next_panel_details(&self) -> Option<(SubdivisionPath, Size, Point<u16>)> {
         if self.subdiv_a.is_some() && self.subdiv_b.is_some() {
             if let Some(mut path) = self.subdiv_a.as_ref().unwrap().next_panel_details() {
@@ -117,6 +152,153 @@ impl SubDivision {
         }
 
         return Ok(());
+    }
+
+    pub fn focus_next_id(&self, selected_id: usize, focus_direction: Direction) -> Option<usize> {
+        let path = self.path_for_panel_id(selected_id)?;
+
+        return self.focus_next_id_internal(path, focus_direction);
+    }
+
+    fn focus_next_id_internal(
+        &self,
+        mut selected_path: SubdivisionPath,
+        focus_direction: Direction,
+    ) -> Option<usize> {
+        match selected_path.pop() {
+            Some(SubdivisionPathElement::A) => {
+                if let Some(subdiv_a) = self.subdiv_a.as_ref() {
+                    let alt =
+                        self.check_for_possible_id(SubdivisionPathElement::A, focus_direction);
+
+                    return subdiv_a
+                        .focus_next_id_internal(selected_path, focus_direction)
+                        .or(alt);
+                } else {
+                    return None;
+                }
+            }
+            Some(SubdivisionPathElement::B) => {
+                if let Some(subdiv_b) = self.subdiv_b.as_ref() {
+                    let alt =
+                        self.check_for_possible_id(SubdivisionPathElement::B, focus_direction);
+
+                    return subdiv_b
+                        .focus_next_id_internal(selected_path, focus_direction)
+                        .or(alt);
+                } else {
+                    return None;
+                }
+            }
+            None => {
+                return None;
+            }
+        }
+    }
+
+    fn check_for_possible_id(
+        &self,
+        path_element: SubdivisionPathElement,
+        focus_direction: Direction,
+    ) -> Option<usize> {
+        match focus_direction {
+            Direction::Up => {
+                if self.split == Some(SubDivisionSplit::Horizontal) {
+                    if path_element.is_b() {
+                        return self.subdiv_a.as_ref().unwrap().tail_b_for_id();
+                    }
+                }
+
+                return None;
+            }
+            Direction::Down => {
+                if self.split == Some(SubDivisionSplit::Horizontal) {
+                    if path_element.is_a() {
+                        return self.subdiv_b.as_ref().unwrap().tail_a_for_id();
+                    }
+                }
+
+                return None;
+            }
+            Direction::Left => {
+                if self.split == Some(SubDivisionSplit::Vertical) {
+                    if path_element.is_b() {
+                        return self.subdiv_a.as_ref().unwrap().tail_b_for_id();
+                    }
+                }
+
+                return None;
+            }
+            Direction::Right => {
+                if self.split == Some(SubDivisionSplit::Vertical) {
+                    if path_element.is_a() {
+                        return self.subdiv_b.as_ref().unwrap().tail_a_for_id();
+                    }
+                }
+
+                return None;
+            }
+        }
+    }
+
+    fn tail_b_for_id(&self) -> Option<usize> {
+        if self.panel.is_some() {
+            return Some(self.panel.as_ref().unwrap().get_id());
+        } else if let (Some(subdiv_a), Some(subdiv_b)) =
+            (self.subdiv_a.as_ref(), self.subdiv_b.as_ref())
+        {
+            let mut res = subdiv_b.tail_b_for_id();
+
+            if res.is_none() {
+                res = subdiv_a.tail_b_for_id();
+            }
+
+            return res;
+        } else {
+            return None;
+        }
+    }
+
+    fn tail_a_for_id(&self) -> Option<usize> {
+        if self.panel.is_some() {
+            return Some(self.panel.as_ref().unwrap().get_id());
+        } else if let (Some(subdiv_a), Some(subdiv_b)) =
+            (self.subdiv_a.as_ref(), self.subdiv_b.as_ref())
+        {
+            let mut res = subdiv_a.tail_b_for_id();
+
+            if res.is_none() {
+                res = subdiv_b.tail_a_for_id();
+            }
+
+            return res;
+        } else {
+            return None;
+        }
+    }
+
+    fn path_for_panel_id(&self, id: usize) -> Option<SubdivisionPath> {
+        if let Some(panel) = self.panel.as_ref() {
+            if panel.get_id() == id {
+                return Some(SubdivisionPath::new());
+            } else {
+                return None;
+            }
+        } else if let (Some(subdiv_a), Some(subdiv_b)) =
+            (self.subdiv_a.as_ref(), self.subdiv_b.as_ref())
+        {
+            if let Some(mut path) = subdiv_a.path_for_panel_id(id) {
+                path.push(SubdivisionPathElement::A);
+                return Some(path);
+            } else if let Some(mut path) = subdiv_b.path_for_panel_id(id) {
+                path.push(SubdivisionPathElement::B);
+                return Some(path);
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        }
     }
 
     pub fn split_panel(
@@ -335,5 +517,15 @@ impl SubdivisionPath {
 
     fn pop(&mut self) -> Option<SubdivisionPathElement> {
         return self.elements.pop();
+    }
+}
+
+impl SubdivisionPathElement {
+    pub fn is_a(&self) -> bool {
+        return *self == SubdivisionPathElement::A;
+    }
+
+    pub fn is_b(&self) -> bool {
+        return *self == SubdivisionPathElement::B;
     }
 }

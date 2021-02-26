@@ -2,6 +2,13 @@ use nix::pty::Winsize;
 use num_traits::{PrimInt, Unsigned, Zero};
 use std::fmt::Display;
 use std::ops::{Add, Sub};
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Size {

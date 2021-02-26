@@ -3,7 +3,7 @@ use crate::command::Command;
 use crate::config::Config;
 use crate::display::Display;
 use crate::error::{ErrorType, MuxideError};
-use crate::geometry::Size;
+use crate::geometry::{Direction, Size};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
 use either::Either;
@@ -287,12 +287,15 @@ impl LogicManager {
     }
 
     fn open_new_panel(&mut self) -> Result<(), MuxideError> {
+        // Checks for an available subdivision
+        let (path, size, origin) = self.display.open_new_panel_details()?;
+
         let id = self.get_next_id();
 
         let (tx, stdin_rx) = self.connection_manager.new_channel(id);
         let pty = Pty::open(self.config.get_panel_init_command())?;
 
-        let new_sizes = self.display.open_new_panel(id)?;
+        let new_sizes = self.display.open_new_panel(id, path, size, origin)?;
         let new_panel_size = new_sizes.last().unwrap().1;
         let parser = Parser::new(
             new_panel_size.get_rows(),
@@ -342,12 +345,6 @@ impl LogicManager {
             }
         }
 
-        if let Some(sel_id) = self.selected_panel {
-            if sel_id == id {
-                self.select_panel(None);
-            }
-        }
-
         for i in 0..self.panels.len() {
             if self.panels[i].id == id {
                 self.panels.remove(i);
@@ -355,9 +352,13 @@ impl LogicManager {
             }
         }
 
-        futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+        if let Some(sel_id) = self.selected_panel {
+            if sel_id == id {
+                self.select_panel(self.panels.first().map(|p| p.id));
+            }
+        }
 
-        self.connection_manager.remove_panel(id)?;
+        futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
         return Ok(());
     }
@@ -381,34 +382,14 @@ impl LogicManager {
             Command::QuitCommand => {
                 self.halt_execution = true;
             }
-            Command::ToggleInputCommand => {
-                if self.selected_panel.is_some() {
-                    self.select_panel(None);
-                } else {
-                    self.select_panel(self.panels.first().map(|p| p.id));
-                }
-            }
             Command::OpenPanelCommand => {
                 self.open_new_panel()?;
             }
             Command::EnterSingleCharacterCommand => {
                 self.single_key_command = true;
             }
-            Command::ClosePanelCommand(id) => {
-                self.close_panel(*id)?;
-            }
-            Command::CloseMostRecentPanelCommand => {
-                let mut recent = None;
-
-                for panel in &self.panels {
-                    if recent.is_none() {
-                        recent = Some(panel.id);
-                    } else if recent.unwrap() < panel.id {
-                        recent = Some(panel.id);
-                    }
-                }
-
-                if let Some(panel) = recent {
+            Command::CloseSelectedPanelCommand => {
+                if let Some(panel) = self.selected_panel {
                     self.close_panel(panel)?;
                 }
             }
@@ -416,15 +397,39 @@ impl LogicManager {
                 self.selected_panel = Some(*id);
                 self.display.set_selected_panel(Some(*id));
             }
-            Command::SubdivideSelectedVertical => {
+            Command::SubdivideSelectedVerticalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_vertical()?;
 
                 futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
             }
-            Command::SubdivideSelectedHorizontal => {
+            Command::SubdivideSelectedHorizontalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_horizontal()?;
 
                 futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+            }
+            Command::FocusPanelLeftCommand => {
+                if let Some(id) = self.display.focus_direction(Direction::Left) {
+                    self.selected_panel = Some(id);
+                    self.display.set_selected_panel(Some(id));
+                }
+            }
+            Command::FocusPanelRightCommand => {
+                if let Some(id) = self.display.focus_direction(Direction::Right) {
+                    self.selected_panel = Some(id);
+                    self.display.set_selected_panel(Some(id));
+                }
+            }
+            Command::FocusPanelUpCommand => {
+                if let Some(id) = self.display.focus_direction(Direction::Up) {
+                    self.selected_panel = Some(id);
+                    self.display.set_selected_panel(Some(id));
+                }
+            }
+            Command::FocusPanelDownCommand => {
+                if let Some(id) = self.display.focus_direction(Direction::Down) {
+                    self.selected_panel = Some(id);
+                    self.display.set_selected_panel(Some(id));
+                }
             }
             _ => unimplemented!(),
         }

@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 lazy_static! {
@@ -210,6 +210,15 @@ impl<'de> Deserialize<'de> for Color {
             Ok(c) => return Ok(c),
             Err(e) => return Err(serde::de::Error::custom(e)),
         }
+    }
+}
+
+impl Serialize for Color {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        return Serialize::serialize(&format!("{}, {}, {}", self.r, self.g, self.b), serializer);
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::command::Command;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use termion::event::Key;
 
@@ -7,6 +7,17 @@ use termion::event::Key;
 pub struct Keys {
     single_key_map: HashMap<char, Command>,
     shortcut_map: HashMap<Key, Command>,
+}
+
+fn key_to_string(key: Key) -> Result<String, &'static str> {
+    return Ok(match key {
+        Key::Char(ch) => format!("{}", ch),
+        Key::Alt(ch) => format!("alt+{}", ch),
+        Key::Ctrl(ch) => format!("ctrl+{}", ch),
+        _ => {
+            return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
+        }
+    });
 }
 
 fn key_from_string(string: String) -> Result<Key, &'static str> {
@@ -131,17 +142,21 @@ impl Default for Keys {
 
         n.shortcut_map
             .insert(Key::Ctrl('a'), Command::EnterSingleCharacterCommand);
-        n.shortcut_map
-            .insert(Key::Ctrl('p'), Command::ToggleInputCommand);
         n.shortcut_map.insert(Key::Ctrl('q'), Command::QuitCommand);
 
         n.single_key_map.insert('n', Command::OpenPanelCommand);
         n.single_key_map
-            .insert('q', Command::CloseMostRecentPanelCommand);
+            .insert('q', Command::CloseSelectedPanelCommand);
         n.single_key_map
-            .insert('v', Command::SubdivideSelectedVertical);
+            .insert('v', Command::SubdivideSelectedVerticalCommand);
         n.single_key_map
-            .insert('h', Command::SubdivideSelectedHorizontal);
+            .insert('h', Command::SubdivideSelectedHorizontalCommand);
+
+        n.single_key_map.insert('l', Command::FocusPanelLeftCommand);
+        n.single_key_map
+            .insert('r', Command::FocusPanelRightCommand);
+        n.single_key_map.insert('u', Command::FocusPanelUpCommand);
+        n.single_key_map.insert('d', Command::FocusPanelDownCommand);
 
         return n;
     }
@@ -199,5 +214,78 @@ impl<'de> Deserialize<'de> for Keys {
         }
 
         return Ok(res);
+    }
+}
+
+impl Serialize for Keys {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct KeyPair {
+            shortcut: Option<String>,
+            key: Option<char>,
+            command: String,
+            args: Option<Vec<String>>,
+        };
+
+        let mut map_to_pair: HashMap<Command, KeyPair> = HashMap::new();
+
+        for (character, cmd) in &self.single_key_map {
+            let args = cmd.args();
+            let args = if args.len() == 0 { None } else { Some(args) };
+
+            map_to_pair.insert(
+                *cmd,
+                KeyPair {
+                    shortcut: None,
+                    key: Some(*character),
+                    command: cmd.to_string(),
+                    args,
+                },
+            );
+        }
+
+        let mut extras = Vec::new();
+
+        for (key, cmd) in &self.shortcut_map {
+            let args = cmd.args();
+            let args = if args.len() == 0 { None } else { Some(args) };
+
+            if map_to_pair.contains_key(cmd) {
+                if map_to_pair.get(cmd).unwrap().args == args {
+                    map_to_pair.get_mut(cmd).unwrap().shortcut =
+                        Some(key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?);
+                } else {
+                    extras.push(KeyPair {
+                        shortcut: Some(
+                            key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
+                        ),
+                        key: None,
+                        command: cmd.to_string(),
+                        args,
+                    });
+                }
+            } else {
+                map_to_pair.insert(
+                    *cmd,
+                    KeyPair {
+                        shortcut: Some(
+                            key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
+                        ),
+                        key: None,
+                        command: cmd.to_string(),
+                        args,
+                    },
+                );
+            }
+        }
+
+        let mut key_pairs: Vec<KeyPair> = map_to_pair.into_iter().map(|(_, pair)| pair).collect();
+
+        key_pairs.append(&mut extras);
+
+        return Serialize::serialize(&key_pairs, serializer);
     }
 }
