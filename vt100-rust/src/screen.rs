@@ -1205,13 +1205,7 @@ impl vte::Perform for Screen {
         }
     }
 
-    fn esc_dispatch(
-        &mut self,
-        _params: &[i64],
-        intermediates: &[u8],
-        _ignore: bool,
-        b: u8,
-    ) {
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, b: u8) {
         match intermediates.get(0) {
             None => match b {
                 b'7' => self.decsc(),
