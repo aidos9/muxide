@@ -124,7 +124,7 @@ impl Display {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
 
-        let panel = self.init_panel(id, size, (origin.column(), origin.row()));
+        let panel = self.init_panel(id, (origin.column(), origin.row()));
 
         self.root_subdivision
             .open_panel_at_path(panel, panel_path)?;
@@ -246,8 +246,8 @@ impl Display {
     }
 
     // Initialise a panel by creating a new instance and copying the pointer into the internal tracker. Location: (col, row).
-    fn init_panel(&mut self, id: usize, size: Size, location: (u16, u16)) -> PanelPtr {
-        let panel = PanelPtr::new(id, size, location);
+    fn init_panel(&mut self, id: usize, location: (u16, u16)) -> PanelPtr {
+        let panel = PanelPtr::new(id, location);
 
         self.panels.push(panel.clone());
 

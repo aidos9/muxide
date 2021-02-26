@@ -356,7 +356,6 @@ impl SubDivision {
 
     fn set_panel(&mut self, mut panel: PanelPtr) -> Size {
         panel.set_location((self.origin.column(), self.origin.row()));
-        panel.set_size(self.dimensions);
 
         self.panel = Some(panel);
         return self.dimensions;

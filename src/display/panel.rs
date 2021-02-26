@@ -39,7 +39,6 @@ pub struct PanelPtr(Rc<RefCell<Panel>>);
 /// A panel is all the information required for a process.
 struct Panel {
     id: usize,
-    size: Size,
     content: Vec<Vec<u8>>,
     hide_cursor: bool,
     cursor_col: u16,
@@ -49,8 +48,8 @@ struct Panel {
 
 impl PanelPtr {
     /// location: (col, row). The location in the global space of the top left (the first) cell
-    pub fn new(id: usize, size: Size, location: (u16, u16)) -> Self {
-        return Self(Rc::new(RefCell::new(Panel::new(id, size, location))));
+    pub fn new(id: usize, location: (u16, u16)) -> Self {
+        return Self(Rc::new(RefCell::new(Panel::new(id, location))));
     }
 
     wrap_panel_method!(set_location, pub mut, location: (u16, u16));
@@ -59,17 +58,14 @@ impl PanelPtr {
     wrap_panel_method!(set_content, pub mut, content: Vec<Vec<u8>>);
     wrap_panel_method!(get_content, pub, => Vec<Vec<u8>>);
     wrap_panel_method!(get_id, pub, => usize);
-    wrap_panel_method!(set_size, pub mut, size: Size);
-    wrap_panel_method!(get_size, pub, => Size);
     wrap_panel_method!(get_hide_cursor, pub, => bool);
     wrap_panel_method!(set_hide_cursor, pub mut, hide: bool);
 }
 
 impl Panel {
-    pub fn new(id: usize, size: Size, location: (u16, u16)) -> Self {
+    pub fn new(id: usize, location: (u16, u16)) -> Self {
         return Self {
             content: Vec::new(),
-            size,
             id,
             location,
             hide_cursor: false,
@@ -105,14 +101,6 @@ impl Panel {
 
     pub fn get_id(&self) -> usize {
         return self.id;
-    }
-
-    pub fn set_size(&mut self, size: Size) {
-        self.size = size;
-    }
-
-    pub fn get_size(&self) -> Size {
-        return self.size;
     }
 
     pub fn get_hide_cursor(&self) -> bool {
