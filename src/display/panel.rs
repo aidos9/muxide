@@ -1,4 +1,4 @@
-use crate::geometry::{Point, Size};
+use crate::geometry::Point;
 use std::cell::RefCell;
 use std::rc::Rc;
 

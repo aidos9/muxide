@@ -78,6 +78,12 @@ pub enum ErrorType {
     InvalidSubdivisionState,
     NoAvailableSubdivision,
     FailedSubdivision,
+    PtyStdinReceiverClosed,
+    FailedReadPoll,
+    FailedToSendMessage,
+    FailedToReadPTY,
+    PTYStoppedRunning,
+    FailedToWriteToPTY,
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -170,6 +176,54 @@ impl MuxideError {
                 return Self {
                     debug_description: "Failed to subdivide panel.".to_string(),
                     description: "Failed to subdivide panel.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::PtyStdinReceiverClosed => {
+                return Self {
+                    debug_description: "The pty's stdin receiver closed.".to_string(),
+                    description: "The pty's stdin receiver closed.".to_string(),
+                    terminate: true,
+                };
+            }
+
+            ErrorType::FailedReadPoll => {
+                return Self {
+                    debug_description: "Failed to poll the pty for data.".to_string(),
+                    description: "Failed to poll the pty for data.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::FailedToSendMessage => {
+                return Self {
+                    debug_description: "Failed to send message from pty thread.".to_string(),
+                    description: "Failed to communicate data from the pty.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::FailedToReadPTY => {
+                return Self {
+                    debug_description: "Failed to read data from pty.".to_string(),
+                    description: "Failed to read data from the pty.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::PTYStoppedRunning => {
+                return Self {
+                    debug_description: "PTY unexpectedly stopped running.".to_string(),
+                    description: "PTY unexpectedly stopped running.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::FailedToWriteToPTY => {
+                return Self {
+                    debug_description: "Failed to write data to PTY.".to_string(),
+                    description: "Failed to write data to PTY.".to_string(),
                     terminate: false,
                 };
             }

@@ -1,35 +1,52 @@
 use crate::error::{ErrorType, MuxideError};
 use crate::geometry::Size;
-use either::{Either, Left, Right};
 use futures::FutureExt;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::{self, Duration};
 
-#[derive(Clone, Debug)]
-pub enum Message {
+#[derive(Clone, Debug, Hash)]
+pub enum ServerMessage {
     Bytes(Vec<u8>),
     Resize(Size),
     Shutdown,
 }
 
+#[derive(Clone, Debug, Hash)]
+pub enum PtyMessage {
+    Bytes(Vec<u8>),
+    Error(MuxideError),
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ChannelID {
+    Pty(usize),
+    Stdin,
+}
+
 #[derive(Clone, Debug)]
 pub struct ControllerResponse {
     pub bytes: Vec<u8>,
-    pub id: Option<usize>,
+    pub id: ChannelID,
 }
 
-pub struct ChannelController {
-    stdin_rx: Receiver<Vec<u8>>,
-    ptys: Vec<Channel>,
+#[derive(Clone, Debug)]
+pub struct ChannelWaitFail {
+    pub id: ChannelID,
+    pub error: Option<MuxideError>,
 }
 
 /// Represents a pty, storing the id of the channels and two for communication with the channel and
 /// 1 to signal a shutdown.
 struct Channel {
     id: usize,
-    rx: Receiver<Vec<u8>>,
-    tx: Sender<Message>,
+    rx: Receiver<PtyMessage>,
+    tx: Sender<ServerMessage>,
+}
+
+pub struct ChannelController {
+    stdin_rx: Receiver<Vec<u8>>,
+    ptys: Vec<Channel>,
 }
 
 impl ChannelController {
@@ -56,7 +73,7 @@ impl ChannelController {
 
     /// Open a new channel the necessary components are kept and tracked in the controller whilst,
     /// the send stdout sender, input receiver and shutdown receiver are returned.
-    pub fn new_channel(&mut self, id: usize) -> (Sender<Vec<u8>>, Receiver<Message>) {
+    pub fn new_channel(&mut self, id: usize) -> (Sender<PtyMessage>, Receiver<ServerMessage>) {
         let (stdout_tx, stdout_rx) = mpsc::channel(Self::BUFFER_SIZE);
         let (stdin_tx, stdin_rx) = mpsc::channel(Self::BUFFER_SIZE);
 
@@ -69,18 +86,6 @@ impl ChannelController {
         return (stdout_tx, stdin_rx);
     }
 
-    pub fn remove_panel(&mut self, id: usize) -> Result<(), MuxideError> {
-        for i in 0..self.ptys.len() {
-            let pty = &self.ptys[i];
-            if pty.id == id {
-                self.ptys.remove(i);
-                return Ok(());
-            }
-        }
-
-        return Err(ErrorType::NoPanelWithIDError { id }.into_error());
-    }
-
     /// Shutdown a pty thread and remove it from the channel controller.
     pub async fn send_shutdown(&mut self, id: usize) {
         for i in 0..self.ptys.len() {
@@ -88,7 +93,7 @@ impl ChannelController {
                 let timer = tokio::time::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
 
                 select! {
-                    result = self.ptys[i].tx.send(Message::Shutdown) => {
+                    result = self.ptys[i].tx.send(ServerMessage::Shutdown) => {
                          // Try to shutdown, if this fails then we just exit.
                         if result.is_ok() {
                             // Give the thread a chance to shutdown.
@@ -110,7 +115,7 @@ impl ChannelController {
             let timer = tokio::time::sleep(Duration::from_millis(Self::SHUTDOWN_TIMEOUT_MS));
 
             select! {
-                result = self.ptys[0].tx.send(Message::Shutdown) => {
+                result = self.ptys[0].tx.send(ServerMessage::Shutdown) => {
                      // Try to shutdown, if this fails then we just exit.
                     if result.is_ok() {
                         // Give the thread a chance to shutdown.
@@ -127,57 +132,95 @@ impl ChannelController {
     /// Wait until a receiver, from the pty's or the stdin receiver receives a message and return
     /// information about what source the data came from and what the message was or the id of a pty
     /// that has shutdown.
-    pub async fn wait_for_message(&mut self) -> Either<ControllerResponse, Option<usize>> {
+    pub async fn wait_for_message(&mut self) -> Result<ControllerResponse, ChannelWaitFail> {
         let bytes;
-        let mut id = None;
+        let channel_id: ChannelID;
+        let mut error = None;
+        let mut index = None;
 
         if self.ptys.is_empty() {
             bytes = self.stdin_rx.recv().await;
+            channel_id = ChannelID::Stdin;
         } else {
             tokio::select! {
                 b = self.stdin_rx.recv() => {
                     bytes = b;
                 }
 
-                (b, i, _) = futures::future::select_all(
+                (message, i, _) = futures::future::select_all(
                 self.ptys
                     .iter_mut()
                     .map(|pair| pair.rx.recv().boxed())) => {
-                        bytes = b;
-                        id = Some(i);
+                        match message {
+                            Some(PtyMessage::Bytes(b)) => {
+                                bytes = Some(b);
+                                error = None;
+                            },
+                            Some(PtyMessage::Error(e)) => {
+                                bytes = None;
+                                error = Some(e);
+                            },
+                            None => {
+                                bytes = None;
+                            }
+                        }
+
+                        index = Some(i);
                    }
+            }
+
+            if let Some(i) = index {
+                channel_id = ChannelID::Pty(self.ptys[i].id);
+            } else {
+                channel_id = ChannelID::Stdin;
             }
         }
 
-        if let Some(i) = id {
-            id = Some(self.ptys[i].id)
-        }
+        if let Some(bytes) = bytes {
+            return Ok(ControllerResponse {
+                bytes,
+                id: channel_id,
+            });
+        } else {
+            if channel_id != ChannelID::Stdin {
+                self.ptys.remove(index.unwrap());
+            }
 
-        if bytes.is_none() {
-            return Right(id);
+            return Err(ChannelWaitFail {
+                id: channel_id,
+                error,
+            });
         }
+    }
 
-        return Left(ControllerResponse {
-            bytes: bytes.unwrap(),
-            id,
-        });
+    pub fn remove_panel(&mut self, id: usize) {
+        for i in 0..self.ptys.len() {
+            if self.ptys[i].id == id {
+                self.ptys.remove(i);
+                return;
+            }
+        }
     }
 
     /// Send bytes to a channel with the specified id. Returns an error if something failed when
     /// sending the data or if no panel exists with the specified id.
     pub async fn write_bytes(&mut self, id: usize, bytes: Vec<u8>) -> Result<(), MuxideError> {
-        return self.write_message(id, Message::Bytes(bytes)).await;
+        return self.write_message(id, ServerMessage::Bytes(bytes)).await;
     }
 
     /// Send a resize message to a channel with the specified id. Returns an error if something
     /// failed when sending the data or if no panel exists with the specified id.
     pub async fn write_resize(&mut self, id: usize, size: Size) -> Result<(), MuxideError> {
-        return self.write_message(id, Message::Resize(size)).await;
+        return self.write_message(id, ServerMessage::Resize(size)).await;
     }
 
     /// Send a message to a channel with the specified id. Returns an error if something
     /// failed when sending the data or if no panel exists with the specified id.
-    pub async fn write_message(&mut self, id: usize, message: Message) -> Result<(), MuxideError> {
+    pub async fn write_message(
+        &mut self,
+        id: usize,
+        message: ServerMessage,
+    ) -> Result<(), MuxideError> {
         for channel in &mut self.ptys {
             if channel.id == id {
                 let slp = time::sleep(Duration::from_millis(Self::SEND_TIMEOUT_MS));

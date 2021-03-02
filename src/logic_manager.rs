@@ -1,4 +1,4 @@
-use crate::channel_controller::{ChannelController, Message};
+use crate::channel_controller::{ChannelController, ChannelID, PtyMessage, ServerMessage};
 use crate::command::Command;
 use crate::config::Config;
 use crate::display::Display;
@@ -6,7 +6,7 @@ use crate::error::{ErrorType, MuxideError};
 use crate::geometry::{Direction, Size};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
-use either::Either;
+use muxide_logging::error;
 use nix::poll;
 use std::os::unix::io::AsRawFd;
 use termion::event::{self, Event};
@@ -19,17 +19,50 @@ use vt100::Parser;
 
 /// The timeout used when we poll the PTY for if it is available.
 const POLL_TIMEOUT_MS: i32 = 100;
+/// THe timeout used when reporting an error.
+const ERROR_TIMEOUT_MS: u64 = 100;
+/// THe timeout used when writing to a file.
+const FILE_TIMEOUT_MS: u64 = 750;
 
 /// This method runs a pty, handling shutdown messages, stdin and stdout.
 /// It should be spawned in a thread.
-async fn pty_manager(mut p: Pty, tx: Sender<Vec<u8>>, mut stdin_rx: Receiver<Message>) {
-    //TODO: Better error handling
+async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<ServerMessage>) {
+    macro_rules! pty_error {
+        ($tx:expr, $e:expr, $log_message:expr) => {
+            error!($log_message);
+
+            let e = $e.into_error();
+
+            // This could error out and if it does then we just assume the controller will deal with it.
+            select! {
+                _ = $tx.send(PtyMessage::Error(e)) => {},
+                _ = tokio::time::sleep(Duration::from_millis(ERROR_TIMEOUT_MS)) => {},
+            }
+        };
+
+        ($tx:expr, $e:expr) => {
+            let e = $e.into_error();
+            error!(format!(
+                "An error occurred in the pty thread. Error description: {:?}",
+                &e
+            ));
+
+            // This could error out and if it does then we just assume the controller will deal with it.
+            select! {
+                _ = $tx.send(PtyMessage::Error(e)) => {},
+                _ = tokio::time::sleep(Duration::from_millis(ERROR_TIMEOUT_MS)) => {},
+            }
+        };
+    };
+
     let pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
 
     loop {
         select! {
-            b = tokio::spawn(async move {
-                let mut res = false;
+            res = tokio::spawn(async move {
+                // For some reason rust reports that this value is unassigned.
+                #[allow(unused_assignments)]
+                let mut res = Ok(false);
 
                 loop {
                     match poll::poll(&mut [pfd], POLL_TIMEOUT_MS) {
@@ -37,18 +70,31 @@ async fn pty_manager(mut p: Pty, tx: Sender<Vec<u8>>, mut stdin_rx: Receiver<Mes
                             // If we get 0, that means the call timed out, a negative value is an error
                             // in my understanding but nix, I believe should handle that as an error
                             if poll_response > 0 {
-                                res = true;
+                                //res = true;
+                                res = Ok(true);
                                 break;
                             }
                         }
-                        Err(e) => (), // TODO: Work out error handling
+                        Err(e) => {
+                            // If we receive an error here, it is a first class (unrecoverable) error.
+                            res = Err(e);
+                            break;
+                        },
                     }
                 }
 
                 res
             }) => {
-                if !b.unwrap() {
-                    continue;
+                match res.unwrap() {
+                    Ok(b) => {
+                        if !b {
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        pty_error!(tx, ErrorType::FailedReadPoll, format!("Failed to poll for available data. Error: {}", e));
+                        return;
+                    },
                 }
 
                 let mut buf = vec![0u8; 4096];
@@ -57,39 +103,56 @@ async fn pty_manager(mut p: Pty, tx: Sender<Vec<u8>>, mut stdin_rx: Receiver<Mes
                 if let Ok(count) = res {
                     if count == 0 {
                         if p.running() == Some(false) {
-                            break;
+                            pty_error!(tx, ErrorType::PTYStoppedRunning);
+                            return;
                         }
                     }
 
                     let mut cpy = vec![0u8; count];
                     cpy.copy_from_slice(&buf[0..count]);
 
-                    tx.send(cpy).await.unwrap();
+                    // Ignore any errors with communicating data.
+                    match tx.send(PtyMessage::Bytes(cpy)).await {
+                        Ok(_) => (),
+                        Err(_) => {
+                            pty_error!(tx, ErrorType::FailedToSendMessage);
+                            return;
+                        }
+                    }
 
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 } else {
-                    panic!("{:?}", res);
-                    break;
+                    pty_error!(tx, ErrorType::FailedToReadPTY);
+                    return;
                 }
             },
             res = stdin_rx.recv() => {
                 if let Some(message) = res {
                     match message {
-                        Message::Bytes(bytes) => {
-                            // TODO: This should timeout
-
-                            p.file().write_all(&bytes).await.unwrap();
+                        ServerMessage::Bytes(bytes) => {
+                            select! {
+                                res = p.file().write_all(&bytes) => {
+                                    match res {
+                                        Ok(_) => (),
+                                        Err(_) => {
+                                            pty_error!(tx, ErrorType::FailedToWriteToPTY);
+                                            return;
+                                        },
+                                    }
+                                },
+                                _ = tokio::time::sleep(Duration::from_millis(FILE_TIMEOUT_MS)) => {},
+                            }
                         },
-                        Message::Resize(size) => {
+                        ServerMessage::Resize(size) => {
                             p.resize(&size).unwrap();
                         },
-                        Message::Shutdown => {
+                        ServerMessage::Shutdown => {
                             break;
-                        }
+                        },
                     }
                 } else {
-                    panic!("{:?}", res);
-                    break;
+                    pty_error!(tx, ErrorType::PtyStdinReceiverClosed);
+                    return;
                 }
             }
         }
@@ -162,8 +225,10 @@ impl LogicManager {
             let res = self.connection_manager.wait_for_message().await;
 
             match res {
-                Either::Left(res) => {
-                    if res.id.is_none() {
+                Ok(res) => {
+                    if let ChannelID::Pty(id) = res.id {
+                        self.handle_panel_output(id, res.bytes);
+                    } else {
                         if let Err(e) = self.handle_stdin(res.bytes).await {
                             if e.should_terminate() {
                                 self.shutdown().await;
@@ -174,24 +239,29 @@ impl LogicManager {
                         } else {
                             self.display.clear_error_message();
                         }
-                    } else {
-                        self.handle_panel_output(res.id.unwrap(), res.bytes);
                     }
                 }
-                Either::Right(id) => {
-                    if id.is_none() {
-                        self.shutdown().await;
-                        return Err(
-                            "The stdin thread was closed. An unknown error occurred.".to_string()
-                        );
-                    } else {
-                        if let Err(e) = self.remove_panel(id.unwrap()) {
+                Err(details) => {
+                    if let ChannelID::Pty(id) = details.id {
+                        if let Err(e) = self.remove_panel(id) {
                             if e.should_terminate() {
                                 self.shutdown().await;
                                 break;
                             } else {
                                 self.display.set_error_message(e.description());
                             }
+                        }
+                    } else {
+                        self.shutdown().await;
+
+                        if let Some(err) = details.error {
+                            return Err(format!(
+                                "The stdin thread was closed. Error details: {}.",
+                                err
+                            ));
+                        } else {
+                            return Err("The stdin thread was closed. An unknown error occurred."
+                                .to_string());
                         }
                     }
                 }
@@ -357,6 +427,8 @@ impl LogicManager {
                 self.select_panel(self.panels.first().map(|p| p.id));
             }
         }
+
+        //TODO: Remove from channel controller
 
         futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
