@@ -193,15 +193,6 @@ impl ChannelController {
         }
     }
 
-    pub fn remove_panel(&mut self, id: usize) {
-        for i in 0..self.ptys.len() {
-            if self.ptys[i].id == id {
-                self.ptys.remove(i);
-                return;
-            }
-        }
-    }
-
     /// Send bytes to a channel with the specified id. Returns an error if something failed when
     /// sending the data or if no panel exists with the specified id.
     pub async fn write_bytes(&mut self, id: usize, bytes: Vec<u8>) -> Result<(), MuxideError> {

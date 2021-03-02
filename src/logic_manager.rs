@@ -503,7 +503,6 @@ impl LogicManager {
                     self.display.set_selected_panel(Some(id));
                 }
             }
-            _ => unimplemented!(),
         }
 
         return Ok(());
