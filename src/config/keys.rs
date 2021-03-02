@@ -158,6 +158,16 @@ impl Default for Keys {
         n.single_key_map.insert('u', Command::FocusPanelUpCommand);
         n.single_key_map.insert('d', Command::FocusPanelDownCommand);
 
+        for i in 1..10 {
+            n.single_key_map.insert(
+                std::char::from_digit(i, 10).unwrap(),
+                Command::FocusWorkspaceCommand(i as usize),
+            );
+        }
+
+        n.single_key_map
+            .insert('0', Command::FocusWorkspaceCommand(10));
+
         return n;
     }
 }

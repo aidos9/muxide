@@ -470,9 +470,8 @@ impl LogicManager {
                     self.close_panel(panel)?;
                 }
             }
-            Command::FocusPanelCommand(id) => {
-                self.selected_panel = Some(*id);
-                self.display.set_selected_panel(Some(*id));
+            Command::FocusWorkspaceCommand(id) => {
+                todo!();
             }
             Command::SubdivideSelectedVerticalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_vertical()?;

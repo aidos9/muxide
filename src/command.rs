@@ -3,7 +3,7 @@ pub enum Command {
     EnterSingleCharacterCommand,
     CloseSelectedPanelCommand,
     OpenPanelCommand,
-    FocusPanelCommand(usize),
+    FocusWorkspaceCommand(usize),
     SubdivideSelectedVerticalCommand,
     SubdivideSelectedHorizontalCommand,
     FocusPanelLeftCommand,
@@ -19,7 +19,7 @@ impl Command {
             Self::EnterSingleCharacterCommand => "EnterSingleCharacter",
             Self::CloseSelectedPanelCommand => "CloseSelectedPanel",
             Self::OpenPanelCommand => "OpenPanel",
-            Self::FocusPanelCommand(_) => "FocusPanel",
+            Self::FocusWorkspaceCommand(_) => "FocusWorkspace",
             Self::SubdivideSelectedVerticalCommand => "SubdivideSelectedVertical",
             Self::SubdivideSelectedHorizontalCommand => "SubdivideSelectedHorizontal",
             Self::FocusPanelLeftCommand => "FocusPanelLeft",
@@ -32,7 +32,7 @@ impl Command {
 
     pub fn args(&self) -> Vec<String> {
         return match self {
-            Command::FocusPanelCommand(a) => vec![format!("{}", a)],
+            Command::FocusWorkspaceCommand(a) => vec![format!("{}", a)],
             _ => Vec::new(),
         };
     }
@@ -53,19 +53,20 @@ impl Command {
             "focuspanelup" => Self::FocusPanelUpCommand,
             "focuspaneldown" => Self::FocusPanelDownCommand,
             "closeselectedpanel" => Self::CloseSelectedPanelCommand,
-            "focuspanel" => {
+            "focusworkspace" => {
                 if args.len() != 1 {
                     return Err(
-                        "The focus panel command must be supplied an integer argument.".to_string(),
+                        "The focus workspace command must be supplied an integer argument."
+                            .to_string(),
                     );
                 }
 
                 let arg = args.pop().unwrap().parse::<usize>().map_err(|_| {
-                    "The focus panel command must be supplied an integer argument.".to_string()
+                    "The focus workspace command must be supplied an integer argument.".to_string()
                 })?;
 
                 required_1_arg = false;
-                Self::FocusPanelCommand(arg)
+                Self::FocusWorkspaceCommand(arg)
             }
             _ => return Err(format!("Unknown command: {}", name)),
         };
