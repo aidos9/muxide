@@ -85,6 +85,11 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
 
                 res
             }) => {
+                if res.is_err() {
+                    pty_error!(tx, ErrorType::FailedReadPoll, "Something unexpected went wrong whilst reading the pty poll");
+                    return;
+                }
+
                 match res.unwrap() {
                     Ok(b) => {
                         if !b {
