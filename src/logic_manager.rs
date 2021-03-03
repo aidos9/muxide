@@ -363,7 +363,7 @@ impl LogicManager {
 
     fn open_new_panel(&mut self) -> Result<(), MuxideError> {
         // Checks for an available subdivision
-        let (path, size, origin) = self.display.open_new_panel_details()?;
+        let (path, size, origin) = self.display.next_panel_details()?;
 
         let id = self.get_next_id();
 
@@ -411,7 +411,7 @@ impl LogicManager {
 
     /// This method is primarily used when a panel closes unexpectedly
     fn remove_panel(&mut self, id: usize) -> Result<(), MuxideError> {
-        let new_sizes = self.display.close_panel(id)?;
+        self.display.close_panel(id)?;
 
         for i in 0..self.close_handles.len() {
             if self.close_handles[i].0 == id {
@@ -432,10 +432,6 @@ impl LogicManager {
                 self.select_panel(self.panels.first().map(|p| p.id));
             }
         }
-
-        //TODO: Remove from channel controller
-
-        futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
         return Ok(());
     }
@@ -471,7 +467,7 @@ impl LogicManager {
                 }
             }
             Command::FocusWorkspaceCommand(id) => {
-                todo!();
+                self.selected_panel = self.display.switch_to_workspace(*id as u8)?;
             }
             Command::SubdivideSelectedVerticalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_vertical()?;

@@ -84,6 +84,7 @@ pub enum ErrorType {
     FailedToReadPTY,
     PTYStoppedRunning,
     FailedToWriteToPTY,
+    NoWorkspaceWithID(usize),
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -224,6 +225,14 @@ impl MuxideError {
                 return Self {
                     debug_description: "Failed to write data to PTY.".to_string(),
                     description: "Failed to write data to PTY.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::NoWorkspaceWithID(id) => {
+                return Self {
+                    debug_description: format!("No workspace with id: {}", id),
+                    description: format!("No workspace number {}", id),
                     terminate: false,
                 };
             }

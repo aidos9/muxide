@@ -1,4 +1,5 @@
 use super::subdivision::{SubDivision, SubDivisionSplit};
+use super::workspace::Workspace;
 use super::{panel::PanelPtr, subdivision::SubdivisionPath};
 use crate::geometry::{Point, Size};
 use crate::{
@@ -9,7 +10,10 @@ use crate::{Color, Config};
 use crossterm::style::Color as CrosstermColor;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, queue, style, terminal};
-use std::io::{stdout, Stdout, Write};
+use std::{
+    collections::HashMap,
+    io::{stdout, Stdout, Write},
+};
 
 macro_rules! queue_map_err {
     ($($v:expr),*) => {
@@ -25,11 +29,10 @@ macro_rules! queue_map_err {
 /// Manages the different panels and renders to the terminal the correct output and layout.
 pub struct Display {
     config: Config,
-    panels: Vec<PanelPtr>,
-    selected_panel: Option<PanelPtr>,
-    root_subdivision: SubDivision,
-    completed_initialization: bool,
+    panel_map: HashMap<usize, PanelPtr>, // id, panel
+    workspaces: Vec<Workspace>,
     selected_workspace: u8,
+    completed_initialization: bool,
     error_message: Option<String>,
 }
 
@@ -40,9 +43,8 @@ impl Display {
     pub fn new(config: Config) -> Self {
         return Self {
             config,
-            root_subdivision: SubDivision::new(Point::new(0, 0), Size::new(0, 0)),
-            panels: Vec::new(),
-            selected_panel: None,
+            panel_map: HashMap::new(),
+            workspaces: vec![Workspace::new(); 10],
             completed_initialization: false,
             selected_workspace: 0,
             error_message: None,
@@ -64,7 +66,9 @@ impl Display {
             Self::get_terminal_size().ok()?
         };
 
-        self.root_subdivision = SubDivision::new(origin, dimensions);
+        for workspace in &mut self.workspaces {
+            workspace.root_subdivision = SubDivision::new(origin, dimensions);
+        }
 
         let mut stdout = stdout();
         queue!(
@@ -91,21 +95,17 @@ impl Display {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
 
-        for panel in &mut self.panels {
-            if panel.get_id() == id {
-                panel.set_content(content);
-                return Ok(());
-            }
+        if let Some(panel) = self.panel_map.get_mut(&id) {
+            panel.set_content(content);
+            return Ok(());
+        } else {
+            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
         }
-
-        return Err(ErrorType::NoPanelWithIDError { id }.into_error());
     }
 
-    pub fn open_new_panel_details(
-        &self,
-    ) -> Result<(SubdivisionPath, Size, Point<u16>), MuxideError> {
+    pub fn next_panel_details(&self) -> Result<(SubdivisionPath, Size, Point<u16>), MuxideError> {
         return self
-            .root_subdivision
+            .root_subdivision()
             .next_panel_details()
             .ok_or(ErrorType::NoAvailableSubdivision.into_error());
     }
@@ -126,85 +126,31 @@ impl Display {
 
         let panel = self.init_panel(id, (origin.column(), origin.row()));
 
-        self.root_subdivision
+        self.root_subdivision_mut()
             .open_panel_at_path(panel, panel_path)?;
 
         return Ok(vec![(id, size)]);
     }
 
-    pub fn close_panel(&mut self, id: usize) -> Result<Vec<(usize, Size)>, MuxideError> {
+    pub fn close_panel(&mut self, id: usize) -> Result<(), MuxideError> {
         if !self.completed_initialization {
             return Err(ErrorType::DisplayNotRunningError.into_error());
         }
 
-        if !self.root_subdivision.close_panel_with_id(id) {
+        if !self.root_subdivision_mut().close_panel_with_id(id) {
             panic!("No panel with an id: {}", id);
         } else {
-            if let Some(panel) = self.selected_panel.as_ref() {
+            if let Some(panel) = self.selected_panel() {
                 if panel.get_id() == id {
-                    self.selected_panel = self.panels.first().map(|p| p.clone());
+                    self.selected_workspace_mut().selected_panel =
+                        self.selected_workspace().panels.first().map(|p| p.clone());
                 }
             }
 
-            self.panels.remove(self.panel_index_for_id(id).unwrap());
+            self.panel_map.remove(&id);
 
-            return Ok(Vec::new());
+            return Ok(());
         }
-
-        // let mut changed = Vec::new();
-
-        // let new_layout = match &self.layout {
-        //     Layout::Empty => {
-        //         return Ok(Vec::new());
-        //     }
-        //     Layout::Single { panel } => {
-        //         if panel.get_id() != id {
-        //             return Err(ErrorType::NoPanelWithIDError { id }.into_error());
-        //         }
-
-        //         self.panels.clear();
-        //         self.selected_panel = None;
-
-        //         Layout::Empty
-        //     }
-        //     Layout::HorizontalStack { left, right } => {
-        //         let size = Self::get_terminal_size()?
-        //             - (if self.config.get_environment_ref().show_workspaces() {
-        //                 Size::new(2, 0)
-        //             } else {
-        //                 Size::new(0, 0)
-        //             });
-        //         let mut panel;
-
-        //         if left.get_id() == id {
-        //             panel = right.clone();
-        //         } else if right.get_id() == id {
-        //             panel = left.clone();
-        //         } else {
-        //             return Err(ErrorType::NoPanelWithIDError { id }.into_error());
-        //         }
-
-        //         panel.set_size(size);
-        //         panel.set_location((0, 2)); // (col, row)
-
-        //         for i in 0..self.panels.len() {
-        //             if self.panels[i].get_id() == id {
-        //                 self.panels.remove(i);
-        //                 break;
-        //             }
-        //         }
-
-        //         self.selected_panel = Some(panel.clone());
-        //         changed.push((panel.get_id(), size));
-
-        //         Layout::Single { panel }
-        //     }
-        //     _ => unimplemented!(),
-        // };
-
-        // self.layout = new_layout;
-
-        // return Ok(changed);
     }
 
     /// Subdivide the currently selected panel into two panels split with a vertical line down the middle
@@ -220,9 +166,18 @@ impl Display {
     }
 
     pub fn focus_direction(&mut self, direction: Direction) -> Option<usize> {
-        return self
-            .root_subdivision
-            .focus_next_id(self.selected_panel.as_ref().map(|p| p.get_id())?, direction);
+        let id = self.selected_panel().map(|p| p.get_id())?;
+        return self.root_subdivision_mut().focus_next_id(id, direction);
+    }
+
+    /// Returns the index of the newly selected panel.
+    pub fn switch_to_workspace(&mut self, workspace: u8) -> Result<Option<usize>, MuxideError> {
+        if workspace >= 10 {
+            return Err(ErrorType::NoWorkspaceWithID(workspace as usize).into_error());
+        }
+
+        self.selected_workspace = workspace;
+        return Ok(self.selected_panel().map(|p| p.get_id()));
     }
 
     /// Subdivide the currently selected panel into two panels split with the specified line down the middle
@@ -230,16 +185,15 @@ impl Display {
         &mut self,
         direction: SubDivisionSplit,
     ) -> Result<Vec<(usize, Size)>, MuxideError> {
-        let (sz, success) = self
-            .root_subdivision
-            .split_panel(self.selected_panel.as_ref().map(|p| p.get_id()), direction);
+        let id = self.selected_panel().map(|p| p.get_id());
+        let (sz, success) = self.root_subdivision_mut().split_panel(id, direction);
 
         if !success {
             return Err(ErrorType::FailedSubdivision.into_error());
         }
 
         return Ok(if let Some(sz) = sz {
-            vec![(self.selected_panel.as_ref().unwrap().get_id(), sz)]
+            vec![(self.selected_panel().unwrap().get_id(), sz)]
         } else {
             Vec::new()
         });
@@ -249,7 +203,7 @@ impl Display {
     fn init_panel(&mut self, id: usize, location: (u16, u16)) -> PanelPtr {
         let panel = PanelPtr::new(id, location);
 
-        self.panels.push(panel.clone());
+        self.panel_map.insert(id, panel.clone());
 
         return panel;
     }
@@ -273,7 +227,7 @@ impl Display {
 
         self.queue_main_borders(&mut stdout, &size)?;
 
-        self.root_subdivision.render(&mut stdout, &self.config)?;
+        self.root_subdivision().render(&mut stdout, &self.config)?;
 
         if self.error_message.is_some() {
             self.queue_error_message(&mut stdout, &size).map_err(|e| {
@@ -317,7 +271,7 @@ impl Display {
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
     fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
-        match &self.selected_panel {
+        match self.selected_panel() {
             Some(panel) => {
                 let loc = panel.get_cursor_position();
 
@@ -531,14 +485,30 @@ impl Display {
         return Ok(());
     }
 
-    fn panel_index_for_id(&self, id: usize) -> Option<usize> {
-        for i in 0..self.panels.len() {
-            if self.panels[i].get_id() == id {
-                return Some(i);
-            }
-        }
+    fn selected_workspace(&self) -> &Workspace {
+        return self
+            .workspaces
+            .get(self.selected_workspace as usize)
+            .unwrap();
+    }
 
-        return None;
+    fn selected_workspace_mut(&mut self) -> &mut Workspace {
+        return self
+            .workspaces
+            .get_mut(self.selected_workspace as usize)
+            .unwrap();
+    }
+
+    fn selected_panel(&self) -> Option<&PanelPtr> {
+        return self.selected_workspace().selected_panel.as_ref();
+    }
+
+    fn root_subdivision(&self) -> &SubDivision {
+        return &self.selected_workspace().root_subdivision;
+    }
+
+    fn root_subdivision_mut(&mut self) -> &mut SubDivision {
+        return &mut self.selected_workspace_mut().root_subdivision;
     }
 
     pub fn set_error_message(&mut self, message: String) {
@@ -551,31 +521,22 @@ impl Display {
 
     pub fn set_selected_panel(&mut self, id: Option<usize>) {
         if id.is_none() {
-            self.selected_panel = None;
+            self.selected_workspace_mut().selected_panel = None;
             return;
         }
 
         let id = id.unwrap();
 
-        for panel in &self.panels {
-            if panel.get_id() == id {
-                self.selected_panel = Some(panel.clone());
-                return;
-            }
-        }
-
-        self.selected_panel = None;
+        self.selected_workspace_mut().selected_panel = self.panel_map.get(&id).map(|p| p.clone());
     }
 
     pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
-        let index = match self.panel_index_for_id(id) {
-            Some(i) => i,
-            None => return false,
-        };
-
-        self.panels[index].set_cursor_position(col, row);
-        self.panels[index].set_hide_cursor(hide);
-
-        return true;
+        if let Some(panel) = self.panel_map.get_mut(&id) {
+            panel.set_cursor_position(col, row);
+            panel.set_hide_cursor(hide);
+            return true;
+        } else {
+            return false;
+        }
     }
 }

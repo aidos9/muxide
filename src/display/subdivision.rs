@@ -503,6 +503,12 @@ impl SubDivision {
     }
 }
 
+impl Default for SubDivision {
+    fn default() -> Self {
+        return Self::new(Point::new(0, 0), Size::new(0, 0));
+    }
+}
+
 impl SubdivisionPath {
     fn new() -> Self {
         return Self {
