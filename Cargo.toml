@@ -24,3 +24,5 @@ dirs = "3.0"
 terminfo = "0.7"
 lazy_static = "1.4"
 muxide_logging = { git = "https://github.com/aidos9/muxide_logging", branch = "main" }
+binary_set = {git = "https://github.com/aidos9/binary-tree-rust", branch = "main"}
+rand = "0.8"

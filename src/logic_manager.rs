@@ -6,8 +6,10 @@ use crate::error::{ErrorType, MuxideError};
 use crate::geometry::{Direction, Size};
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
+use binary_set::BinaryTreeSet;
 use muxide_logging::error;
 use nix::poll;
+use rand::Rng;
 use std::os::unix::io::AsRawFd;
 use termion::event::{self, Event};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -182,8 +184,8 @@ pub struct LogicManager {
     config: Config,
     connection_manager: ChannelController,
     _input_manager: InputManager,
-    next_panel_id: usize,
     close_handles: Vec<(usize, JoinHandle<()>)>,
+    ids: BinaryTreeSet<usize>,
 }
 
 impl LogicManager {
@@ -208,7 +210,7 @@ impl LogicManager {
             connection_manager,
             _input_manager: input_manager,
             display,
-            next_panel_id: 0,
+            ids: BinaryTreeSet::new(),
             halt_execution: false,
             close_handles: Vec::new(),
             single_key_command: false,
@@ -558,7 +560,13 @@ impl LogicManager {
     }
 
     fn get_next_id(&mut self) -> usize {
-        self.next_panel_id += 1;
-        return self.next_panel_id - 1;
+        let mut rng = rand::thread_rng();
+        let mut next_id: usize = rng.gen();
+
+        while self.ids.contains(&next_id) {
+            next_id = rng.gen();
+        }
+
+        return next_id;
     }
 }
