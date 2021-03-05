@@ -1,4 +1,6 @@
 1. Support locking muxide with a password
-2. Add free cursor support
-3. Support highlighting
-4. Support copy + paste
+2. Add support for display key maps/help message
+3. Add free cursor support
+4. Support highlighting
+5. Support copy + paste
+6. Improve Documentation
