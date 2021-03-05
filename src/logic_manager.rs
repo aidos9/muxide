@@ -433,6 +433,8 @@ impl LogicManager {
             }
         }
 
+        self.ids.remove(&id);
+
         return Ok(());
     }
 
@@ -503,6 +505,10 @@ impl LogicManager {
                     self.display.set_selected_panel(Some(id));
                 }
             }
+            Command::MergePanelLeftCommand => {}
+            Command::MergePanelRightCommand => {}
+            Command::MergePanelUpCommand => {}
+            Command::MergePanelDownCommand => {}
         }
 
         return Ok(());
