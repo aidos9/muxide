@@ -5,6 +5,7 @@ mod config;
 mod display;
 mod error;
 mod geometry;
+mod hasher;
 mod input_manager;
 mod logic_manager;
 mod pty;

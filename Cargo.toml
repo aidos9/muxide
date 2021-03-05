@@ -26,3 +26,10 @@ lazy_static = "1.4"
 muxide_logging = { git = "https://github.com/aidos9/muxide_logging", branch = "main" }
 binary_set = {git = "https://github.com/aidos9/binary-tree-rust", branch = "main"}
 rand = "0.8"
+argon2 = { version = "0.1", optional = true }
+scrypt = { version = "0.6", optional = true }
+pbkdf2 = { version = "0.7", features = ["sha1"], optional = true }
+
+[features]
+default = ["argon2"]
+all_hashes = ["argon2", "scrypt", "pbkdf2"]

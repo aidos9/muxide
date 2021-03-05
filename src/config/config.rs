@@ -1,4 +1,4 @@
-use super::Keys;
+use super::{Keys, PasswordSettings};
 use crate::Color;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -44,6 +44,8 @@ pub struct Config {
     borders: Borders,
     #[serde(default)]
     keys: Keys,
+    #[serde(default)]
+    password: PasswordSettings,
 
     /// Potentially can be removed
     thread_delay_period: Option<Duration>,
@@ -109,6 +111,10 @@ impl Config {
 
     pub fn get_environment_mut_ref(&mut self) -> &mut Environment {
         return &mut self.environment;
+    }
+
+    pub fn get_password_ref(&self) -> &PasswordSettings {
+        return &self.password;
     }
 
     pub fn get_panel_init_command(&self) -> &String {
@@ -190,6 +196,7 @@ impl Default for Config {
 
             /// Potentially can be removed
             thread_delay_period: None,
+            password: PasswordSettings::default(),
         };
     }
 }
