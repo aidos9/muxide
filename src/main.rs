@@ -169,13 +169,13 @@ fn main() {
         .unwrap();
 
     rt.enter();
-    if let Some(err) = rt.block_on(async { muxide_start(config).await }) {
+    if let Some(err) = rt.block_on(async { muxide_start(config, password).await }) {
         eprintln!("Terminating with error: {}", err);
         error!(format!("Terminated with error: {}", err));
     }
 }
 
-async fn muxide_start(config: Config) -> Option<String> {
+async fn muxide_start(config: Config, password: Option<String>) -> Option<String> {
     // We don't care about errors that happen with this function, if it fails that's ok.
     if let Err(e) = execute!(stdout(), terminal::EnterAlternateScreen) {
         warning!(format!(
@@ -184,7 +184,7 @@ async fn muxide_start(config: Config) -> Option<String> {
         ));
     }
 
-    let logic_manager = LogicManager::new(config).unwrap();
+    let logic_manager = LogicManager::new(config, password).unwrap();
     let err = logic_manager.start_event_loop().await.err();
 
     // We don't care about errors that happen with this function, if it fails that's ok.

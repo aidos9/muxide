@@ -40,8 +40,6 @@ pub enum HashAlgorithm {
     #[cfg(feature = "scrypt")]
     Scrypt,
     #[cfg(feature = "pbkdf2")]
-    PBKDF2SHA1,
-    #[cfg(feature = "pbkdf2")]
     PBKDF2SHA256,
     #[cfg(feature = "pbkdf2")]
     PBKDF2SHA512,
@@ -101,7 +99,7 @@ impl HashAlgorithm {
         algorithms.push_str("Argon2, ");
 
         #[cfg(feature = "pbkdf2")]
-        algorithms.push_str("PBKDF2_SHA1, PBKDF2_SHA256, PBKDF2_SHA512, ");
+        algorithms.push_str("PBKDF2_SHA256, PBKDF2_SHA512, ");
         #[cfg(feature = "scrypt")]
         algorithms.push_str("Scrypt, ");
 
@@ -129,8 +127,6 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
             #[cfg(feature = "scrypt")]
             "scrypt" => Self::Scrypt,
             #[cfg(feature = "pbkdf2")]
-            "pbkdf2_sha1" => Self::PBKDF2SHA1,
-            #[cfg(feature = "pbkdf2")]
             "pbkdf2_sha256" => Self::PBKDF2SHA256,
             #[cfg(feature = "pbkdf2")]
             "pbkdf2_sha512" => Self::PBKDF2SHA512,
@@ -155,8 +151,6 @@ impl Serialize for HashAlgorithm {
             HashAlgorithm::Argon2 => "Argon2",
             #[cfg(feature = "scrypt")]
             HashAlgorithm::Scrypt => "Scrypt",
-            #[cfg(feature = "pbkdf2")]
-            HashAlgorithm::PBKDF2SHA1 => "PBKDF2_SHA1",
             #[cfg(feature = "pbkdf2")]
             HashAlgorithm::PBKDF2SHA256 => "PBKDF2_SHA256",
             #[cfg(feature = "pbkdf2")]

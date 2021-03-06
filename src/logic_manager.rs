@@ -186,6 +186,7 @@ pub struct LogicManager {
     _input_manager: InputManager,
     close_handles: Vec<(usize, JoinHandle<()>)>,
     ids: BinaryTreeSet<usize>,
+    hashed_password: Option<String>,
 }
 
 impl LogicManager {
@@ -193,7 +194,7 @@ impl LogicManager {
     const SCROLLBACK_LEN: usize = 120;
 
     /// Create a new instance of the logic manager from a config file.
-    pub fn new(config: Config) -> Result<Self, MuxideError> {
+    pub fn new(config: Config, hashed_password: Option<String>) -> Result<Self, MuxideError> {
         // Create a new channel controller with a stdin transmitter which we will use in the input
         // manager to send stdin input to the channel controller
         let (connection_manager, stdin_tx) = ChannelController::new();
@@ -214,6 +215,7 @@ impl LogicManager {
             halt_execution: false,
             close_handles: Vec::new(),
             single_key_command: false,
+            hashed_password,
         });
     }
 

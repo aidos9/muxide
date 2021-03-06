@@ -7,8 +7,6 @@ pub fn hash_password(password: &str, settings: &PasswordSettings) -> Option<Stri
         #[cfg(feature = "scrypt")]
         HashAlgorithm::Scrypt => hash_scrypt(password),
         #[cfg(feature = "pbkdf2")]
-        HashAlgorithm::PBKDF2SHA1 => hash_pbkdf2_sha1(password, settings.pbkdf2_iterations()),
-        #[cfg(feature = "pbkdf2")]
         HashAlgorithm::PBKDF2SHA256 => hash_pbkdf2_sha256(password, settings.pbkdf2_iterations()),
         #[cfg(feature = "pbkdf2")]
         HashAlgorithm::PBKDF2SHA512 => hash_pbkdf2_sha512(password, settings.pbkdf2_iterations()),
@@ -27,7 +25,7 @@ pub fn check_password(
         #[cfg(feature = "scrypt")]
         HashAlgorithm::Scrypt => compare_scrypt(password, comparison),
         #[cfg(feature = "pbkdf2")]
-        HashAlgorithm::PBKDF2SHA1 | HashAlgorithm::PBKDF2SHA256 | HashAlgorithm::PBKDF2SHA512 => {
+        HashAlgorithm::PBKDF2SHA256 | HashAlgorithm::PBKDF2SHA512 => {
             compare_pbkdf2(password, comparison)
         }
         HashAlgorithm::None => Some(password == comparison),
@@ -63,28 +61,6 @@ fn hash_scrypt(password: &str) -> Option<String> {
             .ok()?
             .to_string(),
     );
-}
-
-#[cfg(feature = "pbkdf2")]
-fn hash_pbkdf2_sha1(password: &str, iterations: usize) -> Option<String> {
-    use pbkdf2::password_hash::{Ident, PasswordHasher, SaltString};
-
-    let mut rng = rand::thread_rng();
-    let salt_string = SaltString::generate(&mut rng);
-
-    return pbkdf2::Pbkdf2
-        .hash_password(
-            password.as_bytes(),
-            Some(Ident::new(&pbkdf2::Algorithm::Pbkdf2Sha1.to_string())),
-            None,
-            pbkdf2::Params {
-                rounds: iterations as u32,
-                output_length: 20,
-            },
-            salt_string.as_salt(),
-        )
-        .ok()
-        .map(|r| r.to_string());
 }
 
 #[cfg(feature = "pbkdf2")]
@@ -221,11 +197,6 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_pbkdf2_sha1() {
-            assert!(hash_pbkdf2_sha1("password", 10_000).unwrap().len() > 0);
-        }
-
-        #[test]
         fn test_pbkdf2_sha256() {
             assert!(hash_pbkdf2_sha256("password", 10_000).unwrap().len() > 0);
         }
@@ -233,18 +204,6 @@ mod tests {
         #[test]
         fn test_pbkdf2_sha512() {
             assert!(hash_pbkdf2_sha512("password", 10_000).unwrap().len() > 0);
-        }
-
-        #[test]
-        fn test_pbkdf2_sha1_check_1() {
-            let comp = hash_pbkdf2_sha1("password", 10_000).unwrap();
-            assert!(compare_pbkdf2("password", &comp).unwrap());
-        }
-
-        #[test]
-        fn test_pbkdf2_sha1_check_2() {
-            let comp = hash_pbkdf2_sha1("password", 10_000).unwrap();
-            assert!(!compare_pbkdf2("password2", &comp).unwrap());
         }
 
         #[test]
