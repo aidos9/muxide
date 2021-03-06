@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+#[inline]
+const fn serde_default_as_false() -> bool {
+    return false;
+}
+
 fn default_password_file_location() -> String {
     if let Some(mut path) = dirs::home_dir() {
         path.push(".config/muxide/password");
@@ -24,6 +29,8 @@ pub struct PasswordSettings {
     pbkdf2_iterations: usize,
     #[serde(default = "default_password_file_location")]
     password_file_location: String,
+    #[serde(default = "serde_default_as_false")]
+    disable_prompt_for_new_password: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -54,6 +61,10 @@ impl PasswordSettings {
     pub fn password_file_location(&self) -> &String {
         return &self.password_file_location;
     }
+
+    pub fn disable_prompt_for_new_password(&self) -> bool {
+        return self.disable_prompt_for_new_password;
+    }
 }
 
 impl Default for PasswordSettings {
@@ -63,6 +74,7 @@ impl Default for PasswordSettings {
             password_file_location: default_password_file_location(),
             #[cfg(feature = "pbkdf2")]
             pbkdf2_iterations: default_pbkdf2_iterations(),
+            disable_prompt_for_new_password: false,
         };
     }
 }

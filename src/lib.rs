@@ -5,12 +5,12 @@ mod config;
 mod display;
 mod error;
 mod geometry;
-mod hasher;
+pub mod hasher;
 mod input_manager;
 mod logic_manager;
 mod pty;
 
 use color::Color;
-pub use config::Config;
+pub use config::{Config, PasswordSettings};
 pub use error::{ErrorType, MuxideError};
 pub use logic_manager::LogicManager;

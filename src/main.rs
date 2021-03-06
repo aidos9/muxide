@@ -1,12 +1,15 @@
 use clap::{App, Arg};
 use crossterm::{execute, terminal};
-use muxide::{Config, LogicManager};
+use muxide::{Config, LogicManager, PasswordSettings};
 use muxide_logging::log::LogLevel;
 use muxide_logging::{error, info, warning};
-use std::fs::File;
-use std::io::{stdout, Read};
 use std::path::Path;
 use std::process::exit;
+use std::{fs::File, io::Write};
+use std::{
+    fs::OpenOptions,
+    io::{stdin, stdout, Read},
+};
 
 fn main() {
     let matches = App::new("muxide")
@@ -55,6 +58,12 @@ fn main() {
                 .possible_values(&["JSON", "TOML"])
                 .default_value("TOML")
                 .help("Specify the format of the config file."),
+        )
+        .arg(
+            Arg::with_name("change_password")
+                .long("change-password")
+                .takes_value(false)
+                .help("Set a new lockscreen password."),
         )
         .get_matches();
 
@@ -117,6 +126,41 @@ fn main() {
     }
 
     info!("Completed config load.");
+
+    let password: Option<String>;
+
+    match load_password(config.get_password_ref().password_file_location()) {
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+        Ok(None) => {
+            if config.get_password_ref().disable_prompt_for_new_password() {
+                password = None;
+            } else {
+                password = set_password(
+                    config.get_password_ref().password_file_location(),
+                    config.get_password_ref(),
+                );
+            }
+        }
+        Ok(Some(pword)) => {
+            if matches.is_present("change_password") {
+                password = match change_password(
+                    pword,
+                    config.get_password_ref(),
+                    config.get_password_ref().password_file_location(),
+                ) {
+                    Some(pword) => Some(pword),
+                    None => {
+                        exit(1);
+                    }
+                };
+            } else {
+                password = Some(pword);
+            }
+        }
+    }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
@@ -245,4 +289,189 @@ fn print_default_config(config_format: &str) {
     } else {
         eprintln!("Unknown format: {}", config_format);
     }
+}
+
+fn load_password(path: &str) -> Result<Option<String>, String> {
+    let path = Path::new(path);
+
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let mut content = String::new();
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file. Error: {}", e))?;
+
+    file.read_to_string(&mut content)
+        .map_err(|e| format!("Failed to read file. Error: {}", e))?;
+
+    return Ok(Some(content));
+}
+
+fn set_password(path: &str, settings: &PasswordSettings) -> Option<String> {
+    println!("Passwords are used for locking muxide.");
+    println!("The password will be encrypted and stored to: {}", path);
+    println!("This location can be changed in your config.");
+    print!("Do you want to set a password (y/N): ");
+
+    if let Err(e) = stdout().flush() {
+        eprintln!("Failed to flush to stdout. Error: {}", e);
+        exit(1);
+    }
+
+    let mut line = String::new();
+
+    loop {
+        if let Err(e) = stdin().read_line(&mut line) {
+            eprintln!("Failed to read from stdin. Error: {}", e);
+            exit(1);
+        }
+
+        line = line
+            .to_lowercase()
+            .trim_end_matches("\n")
+            .trim_end_matches("\r")
+            .to_string();
+
+        if line == "n" {
+            return None;
+        } else if line == "y" {
+            break;
+        } else {
+            line = String::new();
+            print!("Do you want to set a password (y/N): ");
+        }
+
+        if let Err(e) = stdout().flush() {
+            eprintln!("Failed to flush to stdout. Error: {}", e);
+            exit(1);
+        }
+    }
+
+    let mut pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+    let mut conf = rpassword::read_password_from_tty(Some("Confirm Password: ")).unwrap();
+
+    while pass != conf {
+        eprintln!("Passwords do not match.");
+        pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+        conf = rpassword::read_password_from_tty(Some("Confirm Password: ")).unwrap();
+    }
+
+    pass = match muxide::hasher::hash_password(&pass, settings) {
+        Some(p) => p,
+        None => {
+            eprintln!("Failed to hash password. Unknown error.");
+            exit(1);
+        }
+    };
+
+    let mut file = match OpenOptions::new().create(true).write(true).open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open \"{}\" for writing. Error: {}", path, e);
+            exit(1);
+        }
+    };
+
+    let bytes: Vec<u8> = pass.bytes().collect();
+
+    if let Err(e) = file.write_all(&bytes) {
+        eprintln!("Failed to write to \"{}\". Error: {}", path, e);
+        exit(1);
+    }
+
+    return Some(pass);
+}
+
+fn change_password(original: String, settings: &PasswordSettings, path: &str) -> Option<String> {
+    println!("Passwords are used for locking muxide.");
+    println!("The password will be encrypted and stored to: {}", path);
+    println!("This location can be changed in your config.");
+    print!("Do you want to set a password (y/N): ");
+
+    if let Err(e) = stdout().flush() {
+        eprintln!("Failed to flush to stdout. Error: {}", e);
+        exit(1);
+    }
+
+    let mut line = String::new();
+
+    loop {
+        if let Err(e) = stdin().read_line(&mut line) {
+            eprintln!("Failed to read from stdin. Error: {}", e);
+            exit(1);
+        }
+
+        line = line
+            .to_lowercase()
+            .trim_end_matches("\n")
+            .trim_end_matches("\r")
+            .to_string();
+
+        if line == "n" {
+            return None;
+        } else if line == "y" {
+            break;
+        } else {
+            line = String::new();
+            print!("Do you want to set a password (y/N): ");
+        }
+
+        if let Err(e) = stdout().flush() {
+            eprintln!("Failed to flush to stdout. Error: {}", e);
+            exit(1);
+        }
+    }
+
+    loop {
+        let comp = rpassword::read_password_from_tty(Some("Old Password: ")).unwrap();
+        let mut result = muxide::hasher::check_password(&comp, settings, &original);
+
+        match result {
+            Some(res) => {
+                if !res {
+                    println!("Invalid password.");
+                } else {
+                    break;
+                }
+            }
+            None => {
+                eprintln!("Failed to hash password.");
+                exit(1);
+            }
+        }
+    }
+
+    let mut pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+    let mut conf = rpassword::read_password_from_tty(Some("Confirm Password: ")).unwrap();
+
+    while pass != conf {
+        eprintln!("Passwords do not match.");
+        pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+        conf = rpassword::read_password_from_tty(Some("Confirm Password: ")).unwrap();
+    }
+
+    pass = match muxide::hasher::hash_password(&pass, settings) {
+        Some(p) => p,
+        None => {
+            eprintln!("Failed to hash password. Unknown error.");
+            exit(1);
+        }
+    };
+
+    let mut file = match OpenOptions::new().create(true).write(true).open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open \"{}\" for writing. Error: {}", path, e);
+            exit(1);
+        }
+    };
+
+    let bytes: Vec<u8> = pass.bytes().collect();
+
+    if let Err(e) = file.write_all(&bytes) {
+        eprintln!("Failed to write to \"{}\". Error: {}", path, e);
+        exit(1);
+    }
+
+    return Some(pass);
 }
