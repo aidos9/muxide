@@ -15,6 +15,22 @@ use std::{
     io::{stdout, Stdout, Write},
 };
 
+const LOCK_SYMBOL: [&'static str; 13] = [
+    "     .--------.",
+    "    / .------. \\",
+    "   / /        \\ \\",
+    "   | |        | |",
+    "  _| |________| |_",
+    ".' |_|        |_| '.",
+    "'._____ ____ _____.'",
+    "|     .'____'.     |",
+    "'.__.'.'    '.'.__.'",
+    "'.__  |      |  __.'",
+    "|   '.'.____.'.'   |",
+    "'.____'.____.'____.'",
+    "'.________________.'",
+];
+
 macro_rules! queue_map_err {
     ($($v:expr),*) => {
         queue!($($v),*).map_err(|e| {
@@ -34,6 +50,7 @@ pub struct Display {
     selected_workspace: u8,
     completed_initialization: bool,
     error_message: Option<String>,
+    is_locked: bool,
 }
 
 impl Display {
@@ -48,6 +65,7 @@ impl Display {
             completed_initialization: false,
             selected_workspace: 0,
             error_message: None,
+            is_locked: false,
         };
     }
 
@@ -82,6 +100,14 @@ impl Display {
 
         self.completed_initialization = true;
         return Some(self);
+    }
+
+    pub fn lock(&mut self) {
+        self.is_locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.is_locked = false;
     }
 
     /// Set the contents of a panel
@@ -225,9 +251,13 @@ impl Display {
             .into_error()
         })?;
 
-        self.queue_main_borders(&mut stdout, &size)?;
+        if self.is_locked {
+            Self::render_locked(&mut stdout, &size)?;
+        } else {
+            self.queue_main_borders(&mut stdout, &size)?;
 
-        self.root_subdivision().render(&mut stdout, &self.config)?;
+            self.root_subdivision().render(&mut stdout, &self.config)?;
+        }
 
         if self.error_message.is_some() {
             self.queue_error_message(&mut stdout, &size).map_err(|e| {
@@ -255,6 +285,23 @@ impl Display {
         })?);
     }
 
+    fn render_locked(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
+        let starting_row = (size.get_rows() - LOCK_SYMBOL.len() as u16) / 2;
+        let starting_col = (size.get_cols() - LOCK_SYMBOL[LOCK_SYMBOL.len() - 1].len() as u16) / 2;
+
+        queue_map_err!(stdout, style::ResetColor)?;
+
+        for i in 0..LOCK_SYMBOL.len() as u16 {
+            queue_map_err!(
+                stdout,
+                cursor::MoveTo(starting_col, starting_row + i),
+                style::Print(LOCK_SYMBOL[i as usize])
+            )?;
+        }
+
+        return Ok(());
+    }
+
     fn get_terminal_size() -> Result<Size, MuxideError> {
         let (cols, rows) = match terminal::size() {
             Ok(t) => t,
@@ -271,6 +318,17 @@ impl Display {
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
     fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
+        if self.is_locked {
+            execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0)).map_err(|e| {
+                ErrorType::QueueExecuteError {
+                    reason: e.to_string(),
+                }
+                .into_error()
+            })?;
+
+            return Ok(());
+        }
+
         match self.selected_panel() {
             Some(panel) => {
                 let loc = panel.get_cursor_position();

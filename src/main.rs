@@ -424,7 +424,7 @@ fn change_password(original: String, settings: &PasswordSettings, path: &str) ->
 
     loop {
         let comp = rpassword::read_password_from_tty(Some("Old Password: ")).unwrap();
-        let mut result = muxide::hasher::check_password(&comp, settings, &original);
+        let result = muxide::hasher::check_password(&comp, settings, &original);
 
         match result {
             Some(res) => {

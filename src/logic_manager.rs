@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::display::Display;
 use crate::error::{ErrorType, MuxideError};
 use crate::geometry::{Direction, Size};
+use crate::hasher;
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
 use binary_set::BinaryTreeSet;
@@ -187,6 +188,8 @@ pub struct LogicManager {
     close_handles: Vec<(usize, JoinHandle<()>)>,
     ids: BinaryTreeSet<usize>,
     hashed_password: Option<String>,
+    password_input: String,
+    locked: bool,
 }
 
 impl LogicManager {
@@ -215,7 +218,9 @@ impl LogicManager {
             halt_execution: false,
             close_handles: Vec::new(),
             single_key_command: false,
+            password_input: String::new(),
             hashed_password,
+            locked: false,
         });
     }
 
@@ -317,6 +322,27 @@ impl LogicManager {
         };
 
         if !self.shortcut(&event)? {
+            if self.locked {
+                match event {
+                    Event::Key(k) => match k {
+                        event::Key::Backspace => {
+                            self.password_input.pop();
+                        }
+                        event::Key::Char(ch) => {
+                            if ch == '\n' {
+                                self.check_password()?;
+                            } else {
+                                self.password_input.push(ch);
+                            }
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                }
+
+                return Ok(());
+            }
+
             match self.selected_panel {
                 Some(id) => {
                     self.connection_manager.write_bytes(id, bytes).await?;
@@ -457,6 +483,10 @@ impl LogicManager {
     }
 
     fn execute_command(&mut self, cmd: &Command) -> Result<(), MuxideError> {
+        if self.locked {
+            return Err(ErrorType::DisplayLocked.into_error());
+        }
+
         match cmd {
             Command::QuitCommand => {
                 self.halt_execution = true;
@@ -509,6 +539,9 @@ impl LogicManager {
                     self.display.set_selected_panel(Some(id));
                 }
             }
+            Command::LockCommand => {
+                self.lock();
+            }
             Command::MergePanelLeftCommand => {}
             Command::MergePanelRightCommand => {}
             Command::MergePanelUpCommand => {}
@@ -516,6 +549,38 @@ impl LogicManager {
         }
 
         return Ok(());
+    }
+
+    fn check_password(&mut self) -> Result<(), MuxideError> {
+        if let Some(comp) = self.hashed_password.as_ref() {
+            if hasher::check_password(
+                &self.password_input,
+                self.config.get_password_ref(),
+                comp.as_str(),
+            )
+            .ok_or(ErrorType::FailedToCheckPassword.into_error())?
+            {
+                self.unlock();
+            } else {
+                self.password_input = String::new();
+                return Err(ErrorType::InvalidPassword.into_error());
+            }
+        } else {
+            self.unlock();
+        }
+
+        return Ok(());
+    }
+
+    fn unlock(&mut self) {
+        self.display.unlock();
+        self.locked = false;
+        self.password_input = String::new();
+    }
+
+    fn lock(&mut self) {
+        self.display.lock();
+        self.locked = true;
     }
 
     async fn resize_panels(&mut self, panels: Vec<(usize, Size)>) -> Result<(), MuxideError> {

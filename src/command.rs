@@ -14,6 +14,7 @@ pub enum Command {
     MergePanelRightCommand,
     MergePanelUpCommand,
     MergePanelDownCommand,
+    LockCommand,
     QuitCommand,
 }
 
@@ -34,6 +35,7 @@ impl Command {
             Self::MergePanelRightCommand => "MergePanelRight",
             Self::MergePanelUpCommand => "MergePanelUp",
             Self::MergePanelDownCommand => "MergePanelDown",
+            Self::LockCommand => "Lock",
             Self::QuitCommand => "Quit",
         };
     }
@@ -65,6 +67,7 @@ impl Command {
             "mergepanelup" => Self::MergePanelUpCommand,
             "mergepaneldown" => Self::MergePanelDownCommand,
             "closeselectedpanel" => Self::CloseSelectedPanelCommand,
+            "lock" => Self::LockCommand,
             "focusworkspace" => {
                 if args.len() != 1 {
                     return Err(

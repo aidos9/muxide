@@ -142,6 +142,7 @@ impl Default for Keys {
 
         n.shortcut_map
             .insert(Key::Ctrl('a'), Command::EnterSingleCharacterCommand);
+        n.shortcut_map.insert(Key::Ctrl('l'), Command::LockCommand);
         n.shortcut_map.insert(Key::Ctrl('q'), Command::QuitCommand);
 
         n.single_key_map.insert('n', Command::OpenPanelCommand);
