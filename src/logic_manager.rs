@@ -508,12 +508,12 @@ impl LogicManager {
             Command::SubdivideSelectedVerticalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_vertical()?;
 
-                futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+                futures::executor::block_on(self.resize_panels(new_sizes))?;
             }
             Command::SubdivideSelectedHorizontalCommand => {
                 let new_sizes = self.display.subdivide_selected_panel_horizontal()?;
 
-                futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
+                futures::executor::block_on(self.resize_panels(new_sizes))?;
             }
             Command::FocusPanelLeftCommand => {
                 if let Some(id) = self.display.focus_direction(Direction::Left) {
@@ -542,10 +542,11 @@ impl LogicManager {
             Command::LockCommand => {
                 self.lock();
             }
-            Command::MergePanelLeftCommand => {}
-            Command::MergePanelRightCommand => {}
-            Command::MergePanelUpCommand => {}
-            Command::MergePanelDownCommand => {}
+            Command::MergePanelCommand => {
+                if let Some(new_sizes) = self.display.merge_selected_panel()? {
+                    futures::executor::block_on(self.resize_panels(vec![new_sizes]))?;
+                }
+            }
         }
 
         return Ok(());

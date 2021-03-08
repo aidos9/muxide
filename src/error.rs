@@ -88,6 +88,8 @@ pub enum ErrorType {
     DisplayLocked,
     InvalidPassword,
     FailedToCheckPassword,
+    NoAvailableSubdivisionToMerge,
+    NoSubdivisionAtPath,
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -260,6 +262,22 @@ impl MuxideError {
                 return Self {
                     debug_description: "Hash comparison failed.".to_string(),
                     description: "Failed to compare password.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::NoAvailableSubdivisionToMerge => {
+                return Self {
+                    debug_description: "No open subdivision to merge.".to_string(),
+                    description: "No open subdivision to merge.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::NoSubdivisionAtPath => {
+                return Self {
+                    debug_description: "No subdivision at path.".to_string(),
+                    description: "No subdivision at path.".to_string(),
                     terminate: false,
                 };
             }

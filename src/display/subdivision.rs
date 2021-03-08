@@ -160,6 +160,132 @@ impl SubDivision {
         return self.focus_next_id_internal(path, focus_direction);
     }
 
+    pub fn merge_selected_panel(
+        &mut self,
+        panel_id: Option<usize>,
+    ) -> Result<Option<Size>, MuxideError> {
+        if self.subdiv_a.is_none() && self.subdiv_b.is_none() {
+            return Err(ErrorType::NoAvailableSubdivisionToMerge.into_error());
+        }
+
+        if let Some(panel_id) = panel_id {
+            let path = self
+                .path_for_panel_id(panel_id)
+                .ok_or(ErrorType::NoPanelWithIDError { id: panel_id }.into_error())?;
+
+            if path.is_empty() {
+                return Ok(None);
+            } else if path.len() == 1 {
+                let panel;
+
+                if let (Some(subdiv_a), Some(subdiv_b)) =
+                    (self.subdiv_a.as_mut(), self.subdiv_b.as_mut())
+                {
+                    if subdiv_a.panel.is_some() && subdiv_b.panel.is_none() {
+                        panel = subdiv_a.panel.take().unwrap();
+                        self.subdiv_a = None;
+                        self.subdiv_b = None;
+                    } else if subdiv_a.panel.is_none() && subdiv_b.panel.is_some() {
+                        panel = subdiv_b.panel.take().unwrap();
+                        self.subdiv_a = None;
+                        self.subdiv_b = None;
+                    } else {
+                        return Ok(None);
+                    }
+                } else {
+                    return Err(ErrorType::InvalidSubdivisionState.into_error());
+                }
+
+                return Ok(Some(self.set_panel(panel)));
+            } else {
+                let parent = self.find_parent_from_path_mut(path).unwrap();
+                let panel;
+
+                if let (Some(subdiv_a), Some(subdiv_b)) =
+                    (parent.subdiv_a.as_mut(), parent.subdiv_b.as_mut())
+                {
+                    if subdiv_a.panel.is_some() && subdiv_b.panel.is_none() {
+                        panel = subdiv_a.panel.take().unwrap();
+                        parent.subdiv_a = None;
+                        parent.subdiv_b = None;
+                    } else if subdiv_a.panel.is_none() && subdiv_b.panel.is_some() {
+                        panel = subdiv_b.panel.take().unwrap();
+                        parent.subdiv_a = None;
+                        parent.subdiv_b = None;
+                    } else {
+                        return Ok(None);
+                    }
+                } else {
+                    return Err(ErrorType::InvalidSubdivisionState.into_error());
+                }
+
+                return Ok(Some(parent.set_panel(panel)));
+            }
+        } else {
+            if self.remove_unused_subdivisions() {
+                self.subdiv_a = None;
+                self.subdiv_b = None;
+                self.split = None;
+            }
+        }
+
+        return Ok(None);
+    }
+
+    fn find_parent_from_path_mut(
+        &mut self,
+        mut path: SubdivisionPath,
+    ) -> Option<&mut Box<SubDivision>> {
+        if path.len() <= 1 {
+            return None;
+        }
+
+        match path.pop().unwrap() {
+            SubdivisionPathElement::A => {
+                if let Some(subdiv) = self.subdiv_a.as_mut() {
+                    if path.len() == 1 {
+                        return Some(subdiv);
+                    } else {
+                        return subdiv.find_parent_from_path_mut(path);
+                    }
+                } else {
+                    return None;
+                }
+            }
+            SubdivisionPathElement::B => {
+                if let Some(subdiv) = self.subdiv_b.as_mut() {
+                    if path.len() == 1 {
+                        return Some(subdiv);
+                    } else {
+                        return subdiv.find_parent_from_path_mut(path);
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+    }
+
+    /// Returns true if this subdivision is empty.
+    fn remove_unused_subdivisions(&mut self) -> bool {
+        if self.panel.is_some() {
+            return false;
+        } else if let (Some(subdiv_a), Some(subdiv_b)) =
+            (self.subdiv_a.as_mut(), self.subdiv_b.as_mut())
+        {
+            if subdiv_a.remove_unused_subdivisions() && subdiv_b.remove_unused_subdivisions() {
+                self.subdiv_a = None;
+                self.subdiv_b = None;
+                self.split = None;
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
     fn focus_next_id_internal(
         &self,
         mut selected_path: SubdivisionPath,
@@ -522,6 +648,14 @@ impl SubdivisionPath {
 
     fn pop(&mut self) -> Option<SubdivisionPathElement> {
         return self.elements.pop();
+    }
+
+    pub fn len(&self) -> usize {
+        return self.elements.len();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        return self.elements.is_empty();
     }
 }
 

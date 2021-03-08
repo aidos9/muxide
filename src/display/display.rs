@@ -597,4 +597,12 @@ impl Display {
             return false;
         }
     }
+
+    pub fn merge_selected_panel(&mut self) -> Result<Option<(usize, Size)>, MuxideError> {
+        let id = self.selected_panel().map(|p| p.get_id());
+        return self
+            .root_subdivision_mut()
+            .merge_selected_panel(id)
+            .map(|opt| opt.map(|sz| (id.unwrap(), sz)));
+    }
 }

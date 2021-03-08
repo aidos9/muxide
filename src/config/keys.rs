@@ -158,6 +158,7 @@ impl Default for Keys {
             .insert('r', Command::FocusPanelRightCommand);
         n.single_key_map.insert('u', Command::FocusPanelUpCommand);
         n.single_key_map.insert('d', Command::FocusPanelDownCommand);
+        n.single_key_map.insert('m', Command::MergePanelCommand);
 
         for i in 0..10 {
             n.single_key_map.insert(
