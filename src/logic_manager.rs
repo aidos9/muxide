@@ -172,6 +172,7 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
 struct Panel {
     parser: Parser,
     id: usize,
+    current_scrollback: usize,
 }
 
 /// Handles a majority of the overall application logic, i.e. receiving stdin input and the panel
@@ -346,6 +347,7 @@ impl LogicManager {
             match self.selected_panel {
                 Some(id) => {
                     self.connection_manager.write_bytes(id, bytes).await?;
+                    self.panel_with_id(id).unwrap().clear_scrollback();
                 }
                 None => (),
             }
@@ -376,8 +378,11 @@ impl LogicManager {
         let panel = self.panel_with_id(id).unwrap();
 
         panel.parser.process(&bytes);
+        panel.clear_scrollback();
 
-        let content = panel
+        self.update_panel_output(id);
+
+        /*let content = panel
             .parser
             .screen()
             .rows_formatted(0, panel.parser.screen().size().1)
@@ -387,6 +392,24 @@ impl LogicManager {
         let cursor_hidden = panel.parser.screen().hide_cursor();
 
         self.display.update_panel_content(id, content).unwrap();
+        self.display
+            .update_panel_cursor(id, curs_col, curs_row, cursor_hidden);*/
+    }
+
+    fn update_panel_output(&mut self, id: usize) {
+        let panel = self.panel_with_id(id).unwrap();
+
+        let content = panel
+            .parser
+            .screen()
+            .rows_formatted(0, panel.parser.screen().size().1)
+            .collect();
+
+        let (curs_row, curs_col) = panel.parser.screen().cursor_position();
+        let cursor_hidden = panel.parser.screen().hide_cursor() || panel.current_scrollback != 0;
+
+        self.display.update_panel_content(id, content).unwrap();
+
         self.display
             .update_panel_cursor(id, curs_col, curs_row, cursor_hidden);
     }
@@ -422,7 +445,7 @@ impl LogicManager {
         });
 
         self.close_handles.push((id, handle));
-        self.panels.push(Panel { parser, id });
+        self.panels.push(Panel::new(id, parser));
         self.select_panel(Some(id));
         futures::executor::block_on(self.resize_panels(new_sizes)).unwrap();
 
@@ -437,6 +460,22 @@ impl LogicManager {
         futures::executor::block_on(self.connection_manager.send_shutdown(id));
 
         return self.remove_panel(id);
+    }
+
+    fn scroll_panel(&mut self, id: usize, up: bool) -> Result<(), MuxideError> {
+        let lines = self.config.get_environment_ref().scroll_lines();
+
+        if let Some(panel) = self.panel_with_id(id) {
+            if up {
+                panel.scroll_up(lines);
+            } else {
+                panel.scroll_down(lines);
+            }
+
+            return Ok(());
+        } else {
+            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+        }
     }
 
     /// This method is primarily used when a panel closes unexpectedly
@@ -547,6 +586,18 @@ impl LogicManager {
                     futures::executor::block_on(self.resize_panels(vec![new_sizes]))?;
                 }
             }
+            Command::ScrollUpCommand => {
+                if let Some(id) = self.selected_panel {
+                    self.scroll_panel(id, true)?;
+                    self.update_panel_output(id);
+                }
+            }
+            Command::ScrollDownCommand => {
+                if let Some(id) = self.selected_panel {
+                    self.scroll_panel(id, false)?;
+                    self.update_panel_output(id);
+                }
+            }
         }
 
         return Ok(());
@@ -636,5 +687,35 @@ impl LogicManager {
         }
 
         return next_id;
+    }
+}
+
+impl Panel {
+    pub fn new(id: usize, parser: Parser) -> Self {
+        return Self {
+            parser,
+            id,
+            current_scrollback: 0,
+        };
+    }
+
+    pub fn scroll_up(&mut self, lines: usize) {
+        self.current_scrollback += lines;
+        let previous = self.parser.screen().scrollback();
+        self.parser.set_scrollback(self.current_scrollback);
+
+        if self.parser.screen().scrollback() == previous {
+            self.current_scrollback -= lines;
+        }
+    }
+
+    pub fn scroll_down(&mut self, lines: usize) {
+        self.current_scrollback = self.current_scrollback.checked_sub(lines).unwrap_or(0);
+        self.parser.set_scrollback(self.current_scrollback);
+    }
+
+    pub fn clear_scrollback(&mut self) {
+        self.current_scrollback = 0;
+        self.parser.set_scrollback(self.current_scrollback);
     }
 }

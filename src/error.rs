@@ -90,6 +90,7 @@ pub enum ErrorType {
     FailedToCheckPassword,
     NoAvailableSubdivisionToMerge,
     NoSubdivisionAtPath,
+    NoPanelAtPath,
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -278,6 +279,14 @@ impl MuxideError {
                 return Self {
                     debug_description: "No subdivision at path.".to_string(),
                     description: "No subdivision at path.".to_string(),
+                    terminate: false,
+                };
+            }
+
+            ErrorType::NoPanelAtPath => {
+                return Self {
+                    debug_description: "No panel at path end.".to_string(),
+                    description: "No panel at path end.".to_string(),
                     terminate: false,
                 };
             }

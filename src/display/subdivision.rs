@@ -206,10 +206,12 @@ impl SubDivision {
                 {
                     if subdiv_a.panel.is_some() && subdiv_b.panel.is_none() {
                         panel = subdiv_a.panel.take().unwrap();
+
                         parent.subdiv_a = None;
                         parent.subdiv_b = None;
                     } else if subdiv_a.panel.is_none() && subdiv_b.panel.is_some() {
                         panel = subdiv_b.panel.take().unwrap();
+
                         parent.subdiv_a = None;
                         parent.subdiv_b = None;
                     } else {

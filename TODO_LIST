@@ -1,7 +1,9 @@
 [*] 1. Support locking muxide with a password
 [*] 2. Support merging splits
-3. Add support for displaying key maps/help message
-4. Add free cursor support
-5. Support highlighting
-6. Support copy + paste
-7. Improve Documentation
+3. Support for scrolling
+4. Add support for displaying key maps/help message
+5. Add free cursor support
+6. Support highlighting
+7. Support copy + paste
+8. Improve Documentation
+9. Support remote access

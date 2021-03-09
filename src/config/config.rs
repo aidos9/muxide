@@ -36,6 +36,11 @@ const fn serde_default_1() -> usize {
     return 1;
 }
 
+#[inline]
+const fn serde_default_5() -> usize {
+    return 5;
+}
+
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default)]
@@ -66,6 +71,8 @@ pub struct Environment {
     #[serde(default = "serde_default_1")]
     log_level: usize,
     log_file: Option<String>,
+    #[serde(default = "serde_default_5")]
+    scroll_lines: usize,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -185,6 +192,10 @@ impl Environment {
     pub fn log_level(&self) -> usize {
         return self.log_level;
     }
+
+    pub fn scroll_lines(&self) -> usize {
+        return self.scroll_lines;
+    }
 }
 
 impl Default for Config {
@@ -211,6 +222,7 @@ impl Default for Environment {
             show_workspaces: true,
             log_level: 1,
             log_file: None,
+            scroll_lines: 5,
         };
     }
 }
