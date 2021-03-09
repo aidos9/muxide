@@ -381,19 +381,6 @@ impl LogicManager {
         panel.clear_scrollback();
 
         self.update_panel_output(id);
-
-        /*let content = panel
-            .parser
-            .screen()
-            .rows_formatted(0, panel.parser.screen().size().1)
-            .collect();
-
-        let (curs_row, curs_col) = panel.parser.screen().cursor_position();
-        let cursor_hidden = panel.parser.screen().hide_cursor();
-
-        self.display.update_panel_content(id, content).unwrap();
-        self.display
-            .update_panel_cursor(id, curs_col, curs_row, cursor_hidden);*/
     }
 
     fn update_panel_output(&mut self, id: usize) {
