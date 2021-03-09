@@ -209,7 +209,7 @@ dependencies = [
  "ansi_term",
  "atty",
  "bitflags",
- "strsim 0.8.0",
+ "strsim",
  "textwrap",
  "unicode-width",
  "vec_map",
@@ -284,41 +284,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06d4a9551359071d1890820e3571252b91229e0712e7c36b08940e603c5a8fc"
-dependencies = [
- "darling_core",
- "darling_macro",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b443e5fb0ddd56e0c9bfa47dc060c5306ee500cb731f2b91432dd65589a77684"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim 0.10.0",
- "syn",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0220073ce504f12a70efc4e7cdaea9e9b1b324872e7ad96a208056d7a638b81"
-dependencies = [
- "darling_core",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,27 +320,6 @@ dependencies = [
  "libc",
  "redox_users",
  "winapi",
-]
-
-[[package]]
-name = "enumset"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbd795df6708a599abf1ee10eacc72efd052b7a5f70fdf0715e4d5151a6db9c3"
-dependencies = [
- "enumset_derive",
-]
-
-[[package]]
-name = "enumset_derive"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19c52f9ec503c8a68dc04daf71a04b07e690c32ab1a8b68e33897f255269d47"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -540,12 +484,6 @@ dependencies = [
  "crypto-mac 0.10.0",
  "digest",
 ]
-
-[[package]]
-name = "ident_case"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "instant"
@@ -1224,12 +1162,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
 
 [[package]]
-name = "strsim"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
 name = "subtle"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1390,9 +1322,10 @@ checksum = "b5a972e5669d67ba988ce3dc826706fb0a8b01471c088cb0b6110b805cc36aed"
 
 [[package]]
 name = "vt100"
-version = "0.8.1"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6552f8bf8f321d38f509ddf5c5c092df487e2d0b5d89f0025fc010372693779e"
 dependencies = [
- "enumset",
  "itoa",
  "log",
  "unicode-width",
@@ -1401,9 +1334,9 @@ dependencies = [
 
 [[package]]
 name = "vte"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96cc8a191608603611e78c6ec11dafef37e3cca0775aeef1931824753e81711d"
+checksum = "2df25fed2855d2fbcbdf1016c69a6ac070fa1aabc8b5d7aedaab8703dce0d2d6"
 dependencies = [
  "arrayvec",
  "utf8parse",
