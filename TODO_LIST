@@ -1,7 +1,7 @@
 [*] 1. Support locking muxide with a password
 [*] 2. Support merging splits
 [*] 3. Support for scrolling
-4. Add support for displaying key maps/help message
+[*] 4. Add support for displaying key maps/help message
 5. Refactor codebase
 6. Improve Documentation
 7. Add free cursor support
