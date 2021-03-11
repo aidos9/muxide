@@ -38,6 +38,30 @@ impl Command {
         };
     }
 
+    pub fn help_text(&self) -> Option<String> {
+        return Some(match self {
+            Self::CloseSelectedPanelCommand => "Close selected panel".to_string(),
+            Self::OpenPanelCommand => "Open new panel".to_string(),
+            Self::FocusWorkspaceCommand(n) => format!("Focus workspace {}", n),
+            Self::SubdivideSelectedVerticalCommand => {
+                "Split panel with a vertical line".to_string()
+            }
+            Self::SubdivideSelectedHorizontalCommand => {
+                "Split panel with a horizontal line".to_string()
+            }
+            Self::FocusPanelLeftCommand => "Focus panel to the left".to_string(),
+            Self::FocusPanelRightCommand => "Focus panel to the right".to_string(),
+            Self::FocusPanelUpCommand => "Focus panel upwards".to_string(),
+            Self::FocusPanelDownCommand => "Focus panel downwards".to_string(),
+            Self::MergePanelCommand => "Merge empty split".to_string(),
+            Self::ScrollUpCommand => "Scroll panel up".to_string(),
+            Self::ScrollDownCommand => "Scroll panel down".to_string(),
+            Self::LockCommand => "Lock the display".to_string(),
+            Self::QuitCommand => "Quit".to_string(),
+            _ => return None,
+        });
+    }
+
     pub fn args(&self) -> Vec<String> {
         return match self {
             Command::FocusWorkspaceCommand(a) => vec![format!("{}", a)],

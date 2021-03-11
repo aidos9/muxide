@@ -93,6 +93,22 @@ impl Keys {
         self.single_key_map.remove(key);
     }
 
+    pub fn help_message_keymap(&self, max_width: usize, max_height: usize) {
+        let mut single_character_shortcut = None;
+        let mut descriptions = Vec::new();
+
+        for (key, command) in self.shortcut_map.iter() {
+            if let Some(help_text) = command.help_text() {
+                let key_string = key_to_string(*key).unwrap();
+                descriptions.push(format!("{} - {}", key_string, help_text));
+            } else {
+                if command == &Command::EnterSingleCharacterCommand {
+                    single_character_shortcut = Some(*key);
+                }
+            }
+        }
+    }
+
     #[inline]
     const fn is_permitted_char(ch: char) -> bool {
         return (ch >= 'a' && ch <= 'z')

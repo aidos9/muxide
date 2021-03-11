@@ -51,6 +51,7 @@ pub struct Display {
     completed_initialization: bool,
     error_message: Option<String>,
     is_locked: bool,
+    display_help_message: bool,
 }
 
 impl Display {
@@ -66,6 +67,7 @@ impl Display {
             selected_workspace: 0,
             error_message: None,
             is_locked: false,
+            display_help_message: false,
         };
     }
 
@@ -301,6 +303,8 @@ impl Display {
 
         return Ok(());
     }
+
+    fn render_help_message(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {}
 
     fn get_terminal_size() -> Result<Size, MuxideError> {
         let (cols, rows) = match terminal::size() {

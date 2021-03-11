@@ -2,8 +2,9 @@
 [*] 2. Support merging splits
 [*] 3. Support for scrolling
 4. Add support for displaying key maps/help message
-5. Add free cursor support
-6. Support highlighting
-7. Support copy + paste
-8. Improve Documentation
-9. Support remote access
+5. Refactor codebase
+6. Improve Documentation
+7. Add free cursor support
+8. Support highlighting
+9. Support copy + paste
+10. Support remote access
