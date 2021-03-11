@@ -93,20 +93,49 @@ impl Keys {
         self.single_key_map.remove(key);
     }
 
-    pub fn help_message_keymap(&self, max_width: usize, max_height: usize) {
+    pub fn help_message_keymap(&self) -> (Vec<String>, usize) {
         let mut single_character_shortcut = None;
+        let mut longest = 0;
         let mut descriptions = Vec::new();
 
         for (key, command) in self.shortcut_map.iter() {
             if let Some(help_text) = command.help_text() {
                 let key_string = key_to_string(*key).unwrap();
-                descriptions.push(format!("{} - {}", key_string, help_text));
+                let line = format!("{} - {}", key_string, help_text);
+
+                if line.len() > longest {
+                    longest = line.len();
+                }
+
+                descriptions.push(line);
             } else {
                 if command == &Command::EnterSingleCharacterCommand {
                     single_character_shortcut = Some(*key);
                 }
             }
         }
+
+        if let Some(character_shortcut) = single_character_shortcut {
+            let key_string = key_to_string(character_shortcut).unwrap();
+            let mut single_character_descriptions = self.single_key_map.iter().collect::<Vec<(&char, &Command)>>();
+            single_character_descriptions.sort_by(|(a_char, _), (b_char, _)| a_char.cmp(b_char));
+
+            let mut iterator = single_character_descriptions.into_iter();
+
+            while let Some((key, command)) = iterator.next_back()  {
+                if let Some(help_text) = command.help_text() {
+                    let line = format!("{} {} - {}", key_string, key, help_text);
+
+                    if line.len() > longest {
+                        longest = line.len();
+                    }
+
+                    descriptions.push(line);
+                }
+            }
+        }
+
+        return (descriptions, longest);
     }
 
     #[inline]
@@ -177,6 +206,7 @@ impl Default for Keys {
         n.single_key_map.insert('m', Command::MergePanelCommand);
         n.single_key_map.insert('o', Command::ScrollUpCommand);
         n.single_key_map.insert('k', Command::ScrollDownCommand);
+        n.single_key_map.insert('/', Command::HelpMessageCommand);
 
         for i in 0..10 {
             n.single_key_map.insert(

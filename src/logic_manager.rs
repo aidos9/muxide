@@ -191,6 +191,7 @@ pub struct LogicManager {
     hashed_password: Option<String>,
     password_input: String,
     locked: bool,
+    displaying_help: bool,
 }
 
 impl LogicManager {
@@ -222,6 +223,7 @@ impl LogicManager {
             password_input: String::new(),
             hashed_password,
             locked: false,
+            displaying_help: false,
         });
     }
 
@@ -244,6 +246,8 @@ impl LogicManager {
                     if let ChannelID::Pty(id) = res.id {
                         self.handle_panel_output(id, res.bytes);
                     } else {
+                        let displaying_help = self.displaying_help;
+
                         if let Err(e) = self.handle_stdin(res.bytes).await {
                             if e.should_terminate() {
                                 self.shutdown().await;
@@ -252,7 +256,12 @@ impl LogicManager {
                                 self.display.set_error_message(e.description());
                             }
                         } else {
-                            self.display.clear_error_message();
+                            if displaying_help {
+                                self.displaying_help = false;
+                                self.display.hide_help();
+                            } else {
+                                self.display.clear_error_message();
+                            }
                         }
                     }
                 }
@@ -584,6 +593,10 @@ impl LogicManager {
                     self.scroll_panel(id, false)?;
                     self.update_panel_output(id);
                 }
+            }
+            Command::HelpMessageCommand  => {
+                self.displaying_help = true;
+                self.display.show_help();
             }
         }
 

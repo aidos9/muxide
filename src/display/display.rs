@@ -56,6 +56,7 @@ pub struct Display {
 
 impl Display {
     const ERROR_COLOR: Color = Color::new(255, 105, 97);
+    const HELP_TITLE: &'static str = "HELP";
 
     /// Create a new "display" instance.
     pub fn new(config: Config) -> Self {
@@ -102,6 +103,14 @@ impl Display {
 
         self.completed_initialization = true;
         return Some(self);
+    }
+
+    pub fn show_help(&mut self) {
+        self.display_help_message = true;
+    }
+
+    pub fn hide_help(&mut self) {
+        self.display_help_message = false;
     }
 
     pub fn lock(&mut self) {
@@ -254,7 +263,9 @@ impl Display {
         })?;
 
         if self.is_locked {
-            Self::render_locked(&mut stdout, &size)?;
+            Self::queue_locked_message(&mut stdout, &size)?;
+        } else if self.display_help_message {
+            self.queue_help_message(&mut stdout, &size)?;
         } else {
             self.queue_main_borders(&mut stdout, &size)?;
 
@@ -287,7 +298,7 @@ impl Display {
         })?);
     }
 
-    fn render_locked(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
+    fn queue_locked_message(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
         let starting_row = (size.get_rows() - LOCK_SYMBOL.len() as u16) / 2;
         let starting_col = (size.get_cols() - LOCK_SYMBOL[LOCK_SYMBOL.len() - 1].len() as u16) / 2;
 
@@ -304,7 +315,62 @@ impl Display {
         return Ok(());
     }
 
-    fn render_help_message(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {}
+    fn queue_help_message(&self, stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
+        queue_map_err!(stdout, style::ResetColor)?;
+
+        let (mut help_lines, longest_line) = self.config.key_map().help_message_keymap();
+
+        let starting_cols: [u16; 2];
+        let starting_row;
+
+        if help_lines.len() + 2 > (size.get_rows() as usize) {
+            starting_row = 2;
+        } else {
+            starting_row = 2 + (size.get_rows() - 2 - help_lines.len() as u16 ) / 2;
+        }
+
+        let multiple_per_line = ((size.get_cols() as usize) - longest_line - 4) > 0;
+
+        if (size.get_cols() as usize) < longest_line {
+            starting_cols = [0, 0];
+        } else {
+            if multiple_per_line {
+                let spacing = (size.get_cols() - longest_line as u16 * 2 ) / 3;
+
+                starting_cols = [spacing, spacing + longest_line as u16 + spacing];
+            } else {
+                starting_cols = [(size.get_cols() - longest_line as u16) / 2, 0];
+            }
+        }
+
+        let mut r = 0;
+
+        while help_lines.len() > 0 {
+            if starting_row + r > size.get_rows() {
+                break;
+            }
+
+            queue_map_err!(stdout, cursor::MoveTo(starting_cols[0], starting_row + r), style::Print(help_lines.pop().unwrap()))?;
+
+            if multiple_per_line && help_lines.len() > 0 {
+                queue_map_err!(stdout, cursor::MoveTo(starting_cols[1], starting_row + r), style::Print("    "), style::Print(help_lines.pop().unwrap()))?;
+            }
+
+            r += 1;
+        }
+
+        for (i, line) in help_lines.into_iter().enumerate() {
+            if starting_row + (i as u16) > size.get_rows() {
+                break;
+            }
+
+            queue_map_err!(stdout, cursor::MoveTo(starting_cols[0], starting_row + i as u16), style::Print(line))?;
+        }
+
+        queue_map_err!(stdout, cursor::MoveTo((size.get_cols() - Self::HELP_TITLE.len() as u16) / 2, 0), style::Print(Self::HELP_TITLE))?;
+
+        return Ok(());
+    }
 
     fn get_terminal_size() -> Result<Size, MuxideError> {
         let (cols, rows) = match terminal::size() {
@@ -322,7 +388,7 @@ impl Display {
 
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
     fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
-        if self.is_locked {
+        if self.is_locked || self.display_help_message {
             execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0)).map_err(|e| {
                 ErrorType::QueueExecuteError {
                     reason: e.to_string(),

@@ -13,6 +13,7 @@ pub enum Command {
     MergePanelCommand,
     ScrollUpCommand,
     ScrollDownCommand,
+    HelpMessageCommand,
     LockCommand,
     QuitCommand,
 }
@@ -33,6 +34,7 @@ impl Command {
             Self::MergePanelCommand => "MergePanel",
             Self::ScrollUpCommand => "ScrollUp",
             Self::ScrollDownCommand => "ScrollDown",
+            Self::HelpMessageCommand => "Help",
             Self::LockCommand => "Lock",
             Self::QuitCommand => "Quit",
         };
@@ -56,6 +58,7 @@ impl Command {
             Self::MergePanelCommand => "Merge empty split".to_string(),
             Self::ScrollUpCommand => "Scroll panel up".to_string(),
             Self::ScrollDownCommand => "Scroll panel down".to_string(),
+            Self::HelpMessageCommand => "Display help".to_string(),
             Self::LockCommand => "Lock the display".to_string(),
             Self::QuitCommand => "Quit".to_string(),
             _ => return None,
@@ -89,6 +92,7 @@ impl Command {
             "lock" => Self::LockCommand,
             "scrollup" => Self::ScrollUpCommand,
             "scrolldown" => Self::ScrollDownCommand,
+            "help" => Self::HelpMessageCommand,
             "focusworkspace" => {
                 if args.len() != 1 {
                     return Err(
