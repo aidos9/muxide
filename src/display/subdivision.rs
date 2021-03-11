@@ -560,7 +560,7 @@ impl SubDivision {
                     self.queue_vertical_line(stdout, config, center_col)?;
                 }
                 Some(SubDivisionSplit::Horizontal) => {
-                    let center_row = self.dimensions.get_rows() / 2 + self.origin.row() - 1;
+                    let center_row = self.dimensions.get_rows() / 2 + self.origin.row();
                     self.queue_horizontal_line(stdout, config, center_row)?;
                 }
                 None => panic!("Unexpected internal error."), // This shouldn't ever happen.

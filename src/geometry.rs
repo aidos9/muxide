@@ -1,7 +1,8 @@
 use nix::pty::Winsize;
-use num_traits::{PrimInt, Unsigned, Zero};
+use num_traits::{PrimInt, Unsigned};
 use std::fmt::Display;
 use std::ops::{Add, Sub};
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Direction {
     Up,
@@ -17,10 +18,9 @@ pub struct Size {
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct Point<T: PrimInt + Unsigned + Zero> {
+pub struct Point<T: PrimInt + Unsigned> {
     x: T,
     y: T,
-    origin: (T, T),
 }
 
 impl Size {
@@ -68,29 +68,14 @@ impl std::fmt::Display for Size {
     }
 }
 
-impl<T: PrimInt + Unsigned + Zero> Point<T> {
+impl<T: PrimInt + Unsigned> Point<T> {
     /// Treats (0, 0) as the origin.
     #[allow(dead_code)]
     pub fn new(column: T, row: T) -> Self {
         return Self {
             x: column,
             y: row,
-            origin: (T::zero(), T::zero()),
         };
-    }
-
-    /// Creates a new point and shifts by (x, y)
-    pub fn new_origin(column: T, row: T, origin: (T, T)) -> Self {
-        return Self {
-            x: column + origin.0,
-            y: row + origin.1,
-            origin,
-        };
-    }
-
-    #[allow(dead_code)]
-    pub fn get_origin(&self) -> (T, T) {
-        return self.origin;
     }
 
     /// Get, the x component of this point
@@ -104,13 +89,7 @@ impl<T: PrimInt + Unsigned + Zero> Point<T> {
     }
 }
 
-impl<T: PrimInt + Unsigned + Zero + Display> Display for Point<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "(x: {}, y: {})", self.column(), self.row());
-    }
-}
-
-impl<T: PrimInt + Unsigned + Zero> Add for Point<T> {
+impl<T: PrimInt + Unsigned> Add for Point<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -118,10 +97,16 @@ impl<T: PrimInt + Unsigned + Zero> Add for Point<T> {
     }
 }
 
-impl<T: PrimInt + Unsigned + Zero> Sub for Point<T> {
+impl<T: PrimInt + Unsigned> Sub for Point<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         return Self::new(self.x - rhs.x, self.y - rhs.y);
+    }
+}
+
+impl<T: PrimInt + Unsigned + Display> Display for Point<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "(x: {}, y: {})", self.column(), self.row());
     }
 }
