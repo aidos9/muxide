@@ -363,7 +363,7 @@ impl LogicManager {
         if let Event::Key(k) = event {
             if let Some(k) = self
                 .config
-                .key_map()
+                .keys_ref()
                 .command_for_shortcut(k)
                 .map(|cmd| cmd.clone())
             {
@@ -411,7 +411,7 @@ impl LogicManager {
         let id = self.get_next_id();
 
         let (tx, stdin_rx) = self.connection_manager.new_channel(id);
-        let pty = Pty::open(self.config.get_panel_init_command())?;
+        let pty = Pty::open(self.config.environment_ref().panel_init_command_ref())?;
 
         let new_sizes = self.display.open_new_panel(id, path, size, origin)?;
         let new_panel_size = new_sizes.last().unwrap().1;
@@ -453,7 +453,7 @@ impl LogicManager {
     }
 
     fn scroll_panel(&mut self, id: usize, up: bool) -> Result<(), MuxideError> {
-        let lines = self.config.get_environment_ref().scroll_lines();
+        let lines = self.config.environment_ref().scroll_lines();
 
         if let Some(panel) = self.panel_with_id(id) {
             if up {
@@ -500,7 +500,7 @@ impl LogicManager {
     fn process_single_key_command(&self, character: char) -> Result<Command, MuxideError> {
         return self
             .config
-            .key_map()
+            .keys_ref()
             .command_for_character(&character)
             .map(|cmd| cmd.clone())
             .ok_or(ErrorType::new_command_error(format!(
@@ -599,7 +599,7 @@ impl LogicManager {
         if let Some(comp) = self.hashed_password.as_ref() {
             if hasher::check_password(
                 &self.password_input,
-                self.config.get_password_ref(),
+                self.config.password_ref(),
                 comp.as_str(),
             )
             .ok_or(ErrorType::new_failed_to_check_password_error())?

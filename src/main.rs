@@ -78,21 +78,19 @@ fn main() {
     );
 
     if let Some(log_file) = matches.value_of("log_file") {
-        config
-            .get_environment_mut_ref()
-            .set_log_file(log_file.to_string());
+        config.environment_mut().set_log_file(log_file.to_string());
     }
 
     if let Some(log_level) = matches.value_of("log_level") {
         if let Ok(log_level) = log_level.parse() {
-            config.get_environment_mut_ref().set_log_level(log_level);
+            config.environment_mut().set_log_level(log_level);
         } else {
             eprintln!("Expected a value of 1, 2 or 3 for the log level.");
             exit(1);
         }
     }
 
-    if let Some(f) = config.get_environment_ref().log_file() {
+    if let Some(f) = config.environment_ref().log_file_ref() {
         if let Err(e) = muxide_logging::set_output_file(f) {
             eprintln!(
                 "Failed to open '{}' for logging. Error description: {}",
@@ -101,7 +99,7 @@ fn main() {
             exit(1);
         }
 
-        match config.get_environment_ref().log_level() {
+        match config.environment_ref().log_level() {
             0 | 1 => {
                 if let Err(e) = muxide_logging::restrict_log_levels(&[
                     LogLevel::StateChange,
@@ -129,18 +127,18 @@ fn main() {
 
     let password: Option<String>;
 
-    match load_password(config.get_password_ref().password_file_location()) {
+    match load_password(config.password_ref().password_file_location()) {
         Err(e) => {
             eprintln!("{}", e);
             exit(1);
         }
         Ok(None) => {
-            if config.get_password_ref().disable_prompt_for_new_password() {
+            if config.password_ref().disable_prompt_for_new_password() {
                 password = None;
             } else {
                 password = set_password(
-                    config.get_password_ref().password_file_location(),
-                    config.get_password_ref(),
+                    config.password_ref().password_file_location(),
+                    config.password_ref(),
                 );
             }
         }
@@ -148,8 +146,8 @@ fn main() {
             if matches.is_present("change_password") {
                 password = match change_password(
                     pword,
-                    config.get_password_ref(),
-                    config.get_password_ref().password_file_location(),
+                    config.password_ref(),
+                    config.password_ref().password_file_location(),
                 ) {
                     Some(pword) => Some(pword),
                     None => {

@@ -589,7 +589,7 @@ impl SubDivision {
         config: &Config,
         col: u16,
     ) -> Result<(), MuxideError> {
-        let ch = config.get_borders_ref().get_vertical_char();
+        let ch = config.borders_ref().get_vertical_char();
 
         for r in 0..self.dimensions.get_rows() {
             queue_map_err!(
@@ -608,7 +608,7 @@ impl SubDivision {
         config: &Config,
         row: u16,
     ) -> Result<(), MuxideError> {
-        let ch = config.get_borders_ref().get_horizontal_char();
+        let ch = config.borders_ref().get_horizontal_char();
 
         for c in 0..self.dimensions.get_cols() {
             queue_map_err!(

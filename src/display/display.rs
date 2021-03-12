@@ -72,13 +72,13 @@ impl Display {
     /// Initializes the terminal for output by taking control of the stdout and clearing the
     /// terminal. This must be run before any other methods are.
     pub fn init(mut self) -> Option<Self> {
-        let origin = if self.config.get_environment_ref().show_workspaces() {
+        let origin = if self.config.environment_ref().show_workspaces() {
             Point::new(0, 2)
         } else {
             Point::new(0, 0)
         };
 
-        let dimensions = if self.config.get_environment_ref().show_workspaces() {
+        let dimensions = if self.config.environment_ref().show_workspaces() {
             Self::get_terminal_size().ok()? - Size::new(2, 0)
         } else {
             Self::get_terminal_size().ok()?
@@ -302,7 +302,7 @@ impl Display {
     fn queue_help_message(&self, stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
         queue_map_err!(stdout, style::ResetColor)?;
 
-        let (mut help_lines, longest_line) = self.config.key_map().help_message_keymap();
+        let (mut help_lines, longest_line) = self.config.keys_ref().help_message_keymap();
 
         let starting_cols: [u16; 2];
         let starting_row;
@@ -425,13 +425,13 @@ impl Display {
         stdout: &mut Stdout,
         terminal_size: &Size,
     ) -> Result<(), MuxideError> {
-        let horizontal_character = self.config.get_borders_ref().get_horizontal_char();
-        let intersection_character = self.config.get_borders_ref().get_intersection_char();
-        let vertical_character = self.config.get_borders_ref().get_vertical_char();
+        let horizontal_character = self.config.borders_ref().get_horizontal_char();
+        let intersection_character = self.config.borders_ref().get_intersection_char();
+        let vertical_character = self.config.borders_ref().get_vertical_char();
 
         Self::reset_stdout_style(stdout)?;
 
-        if self.config.get_environment_ref().show_workspaces() {
+        if self.config.environment_ref().show_workspaces() {
             // Print the workspaces
             self.queue_workspaces_line(
                 stdout,
@@ -479,7 +479,7 @@ impl Display {
         queue!(stdout, cursor::MoveTo(location.0, location.1))?;
         let selected_color = self
             .config
-            .get_environment_ref()
+            .environment_ref()
             .selected_workspace_color()
             .crossterm_color(crossterm::style::Color::White);
 
