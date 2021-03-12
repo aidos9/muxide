@@ -60,20 +60,6 @@ impl Default for PasswordSettings {
     }
 }
 
-#[cfg(feature = "argon2")]
-impl Default for HashAlgorithm {
-    fn default() -> Self {
-        return Self::Argon2;
-    }
-}
-
-#[cfg(not(feature = "argon2"))]
-impl Default for HashAlgorithm {
-    fn default() -> Self {
-        return Self::None;
-    }
-}
-
 impl HashAlgorithm {
     pub fn supported_algorithms() -> String {
         let mut algorithms = "[".to_string();
@@ -93,6 +79,20 @@ impl HashAlgorithm {
         algorithms.push(']');
 
         return algorithms;
+    }
+}
+
+#[cfg(feature = "argon2")]
+impl Default for HashAlgorithm {
+    fn default() -> Self {
+        return Self::Argon2;
+    }
+}
+
+#[cfg(not(feature = "argon2"))]
+impl Default for HashAlgorithm {
+    fn default() -> Self {
+        return Self::None;
     }
 }
 

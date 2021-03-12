@@ -41,11 +41,11 @@ macro_rules! queue_map_err {
 
 /// Manages the different panels and renders to the terminal the correct output and layout.
 pub struct Display {
+    completed_initialization: bool,
     config: Config,
     panel_map: HashMap<usize, PanelPtr>, // id, panel
     workspaces: Vec<Workspace>,
     selected_workspace: u8,
-    completed_initialization: bool,
     error_message: Option<String>,
     is_locked: bool,
     display_help_message: bool,
@@ -58,10 +58,10 @@ impl Display {
     /// Create a new "display" instance.
     pub fn new(config: Config) -> Self {
         return Self {
+            completed_initialization: false,
             config,
             panel_map: HashMap::new(),
             workspaces: vec![Workspace::new(); 10],
-            completed_initialization: false,
             selected_workspace: 0,
             error_message: None,
             is_locked: false,

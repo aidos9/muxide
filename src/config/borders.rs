@@ -33,17 +33,14 @@ impl Borders {
         };
     }
 
-    #[inline]
     pub fn get_intersection_char(&self) -> char {
         return self.intersection_character;
     }
 
-    #[inline]
     pub fn get_vertical_char(&self) -> char {
         return self.vertical_character;
     }
 
-    #[inline]
     pub fn get_horizontal_char(&self) -> char {
         return self.horizontal_character;
     }

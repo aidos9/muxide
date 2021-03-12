@@ -9,61 +9,6 @@ pub struct Keys {
     shortcut_map: HashMap<Key, Command>,
 }
 
-fn key_to_string(key: Key) -> Result<String, &'static str> {
-    return Ok(match key {
-        Key::Char(ch) => format!("{}", ch),
-        Key::Alt(ch) => format!("alt+{}", ch),
-        Key::Ctrl(ch) => format!("ctrl+{}", ch),
-        _ => {
-            return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
-        }
-    });
-}
-
-fn key_from_string(string: String) -> Result<Key, &'static str> {
-    let mut first_half = String::new();
-    let mut string: Vec<char> = string.chars().collect();
-
-    while string.len() > 0 {
-        if string[0] == '+' {
-            if first_half.len() == 0 {
-                return Err("A single character is required to follow a '+'");
-            }
-
-            string.remove(0);
-            break;
-        } else {
-            first_half.push(string.remove(0));
-        }
-    }
-
-    if string.len() > 0 {
-        let lowered = first_half.to_lowercase();
-
-        if lowered == "ctrl" {
-            if string.len() != 1 {
-                return Err("Expected a single character to follow '+'.");
-            } else {
-                return Ok(Key::Ctrl(string[0]));
-            }
-        } else if lowered == "alt" {
-            if string.len() != 1 {
-                return Err("Expected a single character to follow '+'.");
-            } else {
-                return Ok(Key::Alt(string[0]));
-            }
-        } else {
-            return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
-        }
-    } else {
-        if first_half.len() != 1 {
-            return Err("A single character key or modifier '+' single character is expected.");
-        } else {
-            return Ok(Key::Char(first_half.remove(0)));
-        }
-    }
-}
-
 impl Keys {
     pub fn new() -> Self {
         return Self::default();
@@ -100,7 +45,7 @@ impl Keys {
 
         for (key, command) in self.shortcut_map.iter() {
             if let Some(help_text) = command.help_text() {
-                let key_string = key_to_string(*key).unwrap();
+                let key_string = Self::key_to_string(*key).unwrap();
                 let line = format!("{} - {}", key_string, help_text);
 
                 if line.len() > longest {
@@ -116,7 +61,7 @@ impl Keys {
         }
 
         if let Some(character_shortcut) = single_character_shortcut {
-            let key_string = key_to_string(character_shortcut).unwrap();
+            let key_string = Self::key_to_string(character_shortcut).unwrap();
             let mut single_character_descriptions = self
                 .single_key_map
                 .iter()
@@ -141,7 +86,6 @@ impl Keys {
         return (descriptions, longest);
     }
 
-    #[inline]
     const fn is_permitted_char(ch: char) -> bool {
         return (ch >= 'a' && ch <= 'z')
             || (ch >= 'A' && ch <= 'Z')
@@ -178,6 +122,61 @@ impl Keys {
             || ch == '-'
             || ch == '+'
             || ch == '=';
+    }
+
+    fn key_to_string(key: Key) -> Result<String, &'static str> {
+        return Ok(match key {
+            Key::Char(ch) => format!("{}", ch),
+            Key::Alt(ch) => format!("alt+{}", ch),
+            Key::Ctrl(ch) => format!("ctrl+{}", ch),
+            _ => {
+                return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
+            }
+        });
+    }
+
+    fn key_from_string(string: String) -> Result<Key, &'static str> {
+        let mut first_half = String::new();
+        let mut string: Vec<char> = string.chars().collect();
+
+        while string.len() > 0 {
+            if string[0] == '+' {
+                if first_half.len() == 0 {
+                    return Err("A single character is required to follow a '+'");
+                }
+
+                string.remove(0);
+                break;
+            } else {
+                first_half.push(string.remove(0));
+            }
+        }
+
+        if string.len() > 0 {
+            let lowered = first_half.to_lowercase();
+
+            if lowered == "ctrl" {
+                if string.len() != 1 {
+                    return Err("Expected a single character to follow '+'.");
+                } else {
+                    return Ok(Key::Ctrl(string[0]));
+                }
+            } else if lowered == "alt" {
+                if string.len() != 1 {
+                    return Err("Expected a single character to follow '+'.");
+                } else {
+                    return Ok(Key::Alt(string[0]));
+                }
+            } else {
+                return Err("Only the \"Alt\" and \"Ctrl\" modifiers are supported.");
+            }
+        } else {
+            if first_half.len() != 1 {
+                return Err("A single character key or modifier '+' single character is expected.");
+            } else {
+                return Ok(Key::Char(first_half.remove(0)));
+            }
+        }
     }
 }
 
@@ -250,7 +249,7 @@ impl<'de> Deserialize<'de> for Keys {
 
             if let Some(shortcut) = shortcut {
                 let shortcut =
-                    key_from_string(shortcut).map_err(|e| serde::de::Error::custom(e))?;
+                    Self::key_from_string(shortcut).map_err(|e| serde::de::Error::custom(e))?;
 
                 res.shortcut_map.insert(shortcut, cmd.clone());
             }
@@ -316,11 +315,11 @@ impl Serialize for Keys {
             if map_to_pair.contains_key(cmd) {
                 if map_to_pair.get(cmd).unwrap().args == args {
                     map_to_pair.get_mut(cmd).unwrap().shortcut =
-                        Some(key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?);
+                        Some(Self::key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?);
                 } else {
                     extras.push(KeyPair {
                         shortcut: Some(
-                            key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
+                            Self::key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
                         ),
                         key: None,
                         command: cmd.to_string(),
@@ -332,7 +331,7 @@ impl Serialize for Keys {
                     *cmd,
                     KeyPair {
                         shortcut: Some(
-                            key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
+                            Self::key_to_string(*key).map_err(|e| serde::ser::Error::custom(e))?,
                         ),
                         key: None,
                         command: cmd.to_string(),
