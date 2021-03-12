@@ -78,7 +78,7 @@ impl Default for Config {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Environment, Borders};
+    use super::{Borders, Config, Environment};
     use crate::command::Command;
     use crate::Color;
     use termion::event::Key;
@@ -130,12 +130,7 @@ mod tests {
             120,
         );
 
-        comp.borders = Borders::new (
-            '|',
-            ' ',
-            '~',
-            Color::RED,
-        );
+        comp.borders = Borders::new('|', ' ', '~', Color::RED);
 
         comp.keys
             .map_shortcut(Key::Ctrl('a'), Command::OpenPanelCommand);

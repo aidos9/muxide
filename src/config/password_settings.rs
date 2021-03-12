@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use super::serde_default_funcs::{serde_default_password_file_location, serde_default_as_false};
 #[cfg(feature = "pbkdf2")]
 use super::serde_default_funcs::serde_default_pbkdf2_iterations;
+use super::serde_default_funcs::{serde_default_as_false, serde_default_password_file_location};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PasswordSettings {
