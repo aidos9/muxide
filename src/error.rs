@@ -156,7 +156,7 @@ impl ErrorType {
 }
 
 impl MuxideError {
-    pub fn new(tp: ErrorType) -> Self {
+    pub fn from_error_type(tp: ErrorType) -> Self {
         return tp.into_error();
     }
 
