@@ -219,11 +219,11 @@ impl ChannelController {
                 select! {
                     res = channel.tx.send(message) => {
                         if let Err(e) = res {
-                            return Err(ErrorType::PTYWriteError { description: format!("Error while sending message. Error: {}", e)}.into_error());
+                            return Err(ErrorType::new_pty_write_error( format!("Error while sending message. Error: {}", e)));
                         }
                     }
                     _ = slp => {
-                        return Err(ErrorType::PTYWriteError { description: String::from("Timeout while sending message.")}.into_error());
+                        return Err(ErrorType::new_pty_write_error(String::from("Timeout while sending message.")));
                     }
                 }
 
@@ -231,9 +231,9 @@ impl ChannelController {
             }
         }
 
-        return Err(ErrorType::PTYWriteError {
-            description: format!("No panel with the id: {}", id),
-        }
-        .into_error());
+        return Err(ErrorType::new_pty_write_error(format!(
+            "No panel with the id: {}",
+            id
+        )));
     }
 }

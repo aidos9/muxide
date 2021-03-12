@@ -53,30 +53,25 @@ impl Pty {
         } {
             Ok(h) => h,
             Err(e) => {
-                return Err(ErrorType::PTYSpawnError {
-                    description: e.to_string(),
-                }
-                .into_error());
+                return Err(ErrorType::new_pty_spawn_error(e.to_string()));
             }
         };
 
         if APPLY_NONBLOCK_LATER {
             let flags = unsafe { libc::fcntl(file_descriptor, libc::F_GETFL, 0) };
             if flags < 0 {
-                return Err(ErrorType::FCNTLError {
-                    reason: io::Error::last_os_error().to_string(),
-                }
-                .into_error());
+                return Err(ErrorType::new_fcntl_error(
+                    io::Error::last_os_error().to_string(),
+                ));
             }
 
             let res =
                 unsafe { libc::fcntl(file_descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) };
 
             if res == -1 {
-                return Err(ErrorType::FCNTLError {
-                    reason: io::Error::last_os_error().to_string(),
-                }
-                .into_error());
+                return Err(ErrorType::new_fcntl_error(
+                    io::Error::last_os_error().to_string(),
+                ));
             }
         }
 
@@ -113,31 +108,17 @@ impl Pty {
             }),
             None,
         )
-        .map_err(|e| {
-            ErrorType::FCNTLError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+        .map_err(|e| ErrorType::new_fcntl_error(e.to_string()))?;
 
         let (master, slave) = (res.master, res.slave);
 
-        let res =
-            OFlag::from_bits_truncate(fcntl::fcntl(master, FcntlArg::F_GETFL).map_err(|e| {
-                {
-                    ErrorType::FCNTLError {
-                        reason: e.to_string(),
-                    }
-                }
-                .into_error()
-            })?);
+        let res = OFlag::from_bits_truncate(
+            fcntl::fcntl(master, FcntlArg::F_GETFL)
+                .map_err(|e| ErrorType::new_fcntl_error(e.to_string()))?,
+        );
 
-        fcntl::fcntl(master, FcntlArg::F_SETFL(res)).map_err(|e| {
-            ErrorType::FCNTLError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+        fcntl::fcntl(master, FcntlArg::F_SETFL(res))
+            .map_err(|e| ErrorType::new_fcntl_error(e.to_string()))?;
 
         return Ok((master, slave));
     }
@@ -146,11 +127,10 @@ impl Pty {
         let res = unsafe { libc::ioctl(self.fd, libc::TIOCSWINSZ, &size.to_winsize()) };
 
         if res != 0 {
-            return Err(ErrorType::IOCTLError {
-                code: res,
-                outcome: "Failed to resize the PTY.".to_string(),
-            }
-            .into_error());
+            return Err(ErrorType::new_ioctl_error(
+                res,
+                "Failed to resize the PTY.".to_string(),
+            ));
         }
 
         return Ok(());

@@ -81,7 +81,10 @@ impl Panel {
 
     /// Returns the cursor position in the global space.
     pub fn get_cursor_position(&self) -> Point<u16> {
-        return Point::new(self.cursor_col + self.location.0, self.cursor_row + self.location.1);
+        return Point::new(
+            self.cursor_col + self.location.0,
+            self.cursor_row + self.location.1,
+        );
     }
 
     pub fn set_cursor_position(&mut self, col: u16, row: u16) {

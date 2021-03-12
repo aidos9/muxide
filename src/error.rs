@@ -1,97 +1,143 @@
+use paste::paste;
 use std::error::Error;
 
-#[derive(Clone, PartialEq, Debug, Hash)]
-pub enum ErrorType {
-    IOCTLError {
-        code: i32,
-        outcome: String,
-    },
+macro_rules! define_error_type {
+    ($($name:ident [$snake_name:ident] ($debug_description:literal $(($($debug_arg:ident),*))?, $(#$description:literal $(($($arg:ident),*))?,)? $terminate:literal) {$($field_name:ident: $field_type:ty),*};)*) => {
+        #[derive(Clone, PartialEq, Debug, Hash)]
+        pub enum ErrorType {
+            $($name {
+                $(
+                    $field_name : $field_type
+                ),*
+            }),*
+        }
 
-    PTYSpawnError {
-        description: String,
-    },
+        impl ErrorType {
+            $(
+                 paste! {
+                    pub fn [<new_$snake_name>] ($($field_name : $field_type),*) -> Self {
+                        return Self::$name {
+                            $($field_name),*
+                        };
+                    }
 
-    PollCreationError {
-        reason: String,
-    },
+                    pub fn [<new_$snake_name _error>]($($field_name : $field_type),*) -> MuxideError {
+                        return Self::[<new_$snake_name>]($($field_name),*).into_error();
+                    }
+                }
+            )*
 
-    DetermineTerminalSizeError {
-        reason: String,
-    },
+            pub fn into_error(self) -> MuxideError {
+                return match self {
+                    $(
+                        Self::$name { $($field_name),* } => {
+                            #[allow(unused_variables)]
+                            let description = format!($debug_description, $($($debug_arg),*)?);
+                            $(let description = format!($description, $($($arg),*)?);)?
 
-    PollingError {
-        reason: String,
-    },
-
-    IOError {
-        read: bool,
-        target: String,
-        reason: String,
-    },
-
-    StdoutFlushError {
-        reason: String,
-    },
-
-    OpenPTYError {
-        reason: String,
-    },
-
-    FCNTLError {
-        reason: String,
-    },
-
-    FailedTTYAcquisitionError {
-        reason: String,
-    },
-
-    EnterRawModeError {
-        reason: String,
-    },
-
-    NoPanelWithIDError {
-        id: usize,
-    },
-
-    QueueExecuteError {
-        reason: String,
-    },
-
-    ScriptError {
-        description: String,
-    },
-
-    PTYWriteError {
-        description: String,
-    },
-
-    CommandError {
-        description: String,
-    },
-
-    EventParsingError {
-        message: String,
-    },
-
-    DisplayNotRunningError,
-    InputManagerRunningError,
-    InvalidSubdivisionState,
-    NoAvailableSubdivision,
-    FailedSubdivision,
-    PtyStdinReceiverClosed,
-    FailedReadPoll,
-    FailedToSendMessage,
-    FailedToReadPTY,
-    PTYStoppedRunning,
-    FailedToWriteToPTY,
-    NoWorkspaceWithID(usize),
-    DisplayLocked,
-    InvalidPassword,
-    FailedToCheckPassword,
-    NoAvailableSubdivisionToMerge,
-    NoSubdivisionAtPath,
-    NoPanelAtPath,
+                            MuxideError {
+                                debug_description: format!($debug_description, $($($debug_arg),*)?),
+                                description,
+                                terminate: $terminate,
+                            }
+                        }
+                    ),*
+                };
+            }
+        }
+    };
 }
+
+define_error_type!(
+    IOCTLError [ioctl] ("ioctl call returned error code: {}. {}" (code, outcome), #"ioctl call returned error code: {}. {}" (code, outcome), true) {
+        code: i32,
+        outcome: String
+    };
+
+    PTYSpawnError [pty_spawn] ("Failed to spawn new PTY. Reason {}" (description), #"Failed to spawn new PTY.", true) {
+        description: String
+    };
+
+    PollCreationError [poll_creation] ("Failed to create the IO poll. Reason: {}" (reason), #"Failed to create the IO poll", true) {
+        reason: String
+    };
+
+    DetermineTerminalSizeError [determine_terminal_size] ("Failed to determine terminal size. Reason: {}" (reason), #"Failed to determine terminal size.", true) {
+        reason: String
+    };
+
+    PollingError [polling] ("Failed to poll the IO poll. Reason: {}" (reason), #"Failed to poll the IO poll.", true) {
+        reason: String
+    };
+
+    ReadIOError [read_io] ("Failed to read from {}. Reason: {}" (target, reason), #"Failed to read from {}" (target), true) {
+        target: String,
+        reason: String
+    };
+
+    WriteIOError [write_io] ("Failed to write to {}. Reason: {}" (target, reason), #"Failed to write to {}" (target), true) {
+        target: String,
+        reason: String
+    };
+
+    StdoutFlushError [stdout_flush] ("Failed to flush stdout. Reason: {}" (reason), #"Failed to flush stdout", true) {
+        reason: String
+    };
+
+    OpenPTYError [open_pty] ("Failed to open pty. Reason: {}" (reason), #"Failed to open pty", true) {
+        reason: String
+    };
+
+    FCNTLError [fcntl] ("Failed fcntl call. Reason: {}" (reason), #"Failed fcntl call.", true) {
+        reason: String
+    };
+
+    FailedTTYAcquisitionError [failed_tty_acquisition] ("Failed to acquire TTY. Reason: {}" (reason), #"Failed to acquire TTY.", true) {
+        reason: String
+    };
+
+    EnterRawModeError [enter_raw_mode] ("Failed to enter TTY raw mode. Reason: {}" (reason), #"Failed to enter TTY raw mode.", true) {
+        reason: String
+    };
+
+    NoPanelWithIDError [no_panel_with_id] ("No panel with the id: {}" (id), #"No panel with the id: {}" (id), false) {
+        id: usize
+    };
+
+    QueueExecuteError [queue_execute] ("Failed to queue or execute display element. Reason: {}" (reason), #"Failed to queue or execute display element.", true) {
+        reason: String
+    };
+
+    PTYWriteError [pty_write] ("Failed to write to PTY. Description: {}" (description), #"Failed to write to PTY.", true) {
+        description: String
+    };
+
+    CommandError[command]  ("{}" (description), false) {
+        description: String
+    };
+
+    EventParsingError [event_parsing] ("Error occurred whilst processing a vt100 event: {}" (message), #"Failed to process a terminal event." ,false) {
+        message: String
+    };
+
+    DisplayNotRunningError [display_not_running] ("Display is not running", true) { };
+    InputManagerRunningError [input_manager_running] ("The input manager is already running", true) { };
+    InvalidSubdivisionStateError[invalid_subdivision_state]  ("The subdivision is in an invalid state.", #"Failed to render due to invalid subdivision state.", true) { };
+    NoAvailableSubdivisionError [no_available_subdivision] ("No empty subdivisions.", false) { };
+    FailedSubdivisionError [failed_subdivision] ("Failed to subdivide panel.", false) { };
+    PtyStdinReceiverClosedError [pty_stdin_receiver_closed] ("The pty's stdin receiver closed.", true) { };
+    FailedReadPollError [failed_read_poll] ("Failed to poll the pty for data.", false) { };
+    FailedToSendMessageError [failed_to_send_message] ("Failed to send message from pty thread.", false) { };
+    FailedToReadPTYError [failed_to_read_pty] ("Failed to read data from pty.", false) { };
+    PTYStoppedRunningError [pty_stopped_running] ("PTY unexpectedly stopped running.", false) { };
+    NoWorkspaceWithIDError [no_workspace_with_id] ("No workspace with id: {}" (id), false) { id: usize };
+    DisplayLockedError [display_locked] ("Display is locked.", false) { };
+    InvalidPasswordError [invalid_password] ("Incorrect Password.", false){ };
+    FailedToCheckPasswordError [failed_to_check_password] ("Hash comparison failed.", #"Failed to compare password.", true) { };
+    NoAvailableSubdivisionToMergeError [no_available_subdivision_to_merge] ("No open subdivision to merge.", false) { };
+    NoSubdivisionAtPathError [no_subdivision_at_path] ("No subdivision at path.", true) { };
+    NoPanelAtPathError [no_panel_at_path] ("No panel at path end.", true) { };
+);
 
 #[derive(Clone, PartialEq, Hash)]
 pub struct MuxideError {
@@ -101,10 +147,6 @@ pub struct MuxideError {
 }
 
 impl ErrorType {
-    pub fn into_error(self) -> MuxideError {
-        return MuxideError::new(self);
-    }
-
     pub fn new_display_qe_error(io_error: std::io::Error) -> MuxideError {
         return Self::QueueExecuteError {
             reason: io_error.to_string(),
@@ -115,182 +157,7 @@ impl ErrorType {
 
 impl MuxideError {
     pub fn new(tp: ErrorType) -> Self {
-        return match tp {
-            ErrorType::IOCTLError { code, outcome } => Self::new_ioctl_error(code, outcome),
-            ErrorType::PTYSpawnError { description } => Self::new_pty_spawn_error(description),
-            ErrorType::PollCreationError { reason } => Self::new_poll_creation_error(reason),
-            ErrorType::DetermineTerminalSizeError { reason } => {
-                Self::new_determine_terminal_size_error(reason)
-            }
-            ErrorType::PollingError { reason } => Self::new_polling_error(reason),
-            ErrorType::IOError {
-                read,
-                target,
-                reason,
-            } => {
-                if read {
-                    Self::new_read_io_error(target, reason)
-                } else {
-                    Self::new_write_io_error(target, reason)
-                }
-            }
-            ErrorType::StdoutFlushError { reason } => return Self::new_stdout_flush_error(reason),
-            ErrorType::OpenPTYError { reason } => return Self::new_open_pty_error(reason),
-            ErrorType::FCNTLError { reason } => return Self::new_fcntl_error(reason),
-            ErrorType::DisplayNotRunningError => return Self::new_display_not_running_error(),
-            ErrorType::InputManagerRunningError => return Self::new_input_manager_running_error(),
-            ErrorType::FailedTTYAcquisitionError { reason } => {
-                return Self::new_failed_tty_acquisition_error(reason)
-            }
-
-            ErrorType::EnterRawModeError { reason } => {
-                return Self::new_enter_raw_mode_error(reason)
-            }
-
-            ErrorType::NoPanelWithIDError { id } => {
-                return Self::new_no_panel_with_id(id);
-            }
-
-            ErrorType::QueueExecuteError { reason } => {
-                return Self::new_queue_execute_error(reason);
-            }
-
-            ErrorType::ScriptError { description } => {
-                return Self::new_script_error(description);
-            }
-
-            ErrorType::PTYWriteError { description } => {
-                return Self::new_pty_write_error(description);
-            }
-
-            ErrorType::CommandError { description } => {
-                return Self::new_command_error(description);
-            }
-
-            ErrorType::EventParsingError { message } => {
-                return Self::new_event_parsing_error(message);
-            }
-
-            ErrorType::InvalidSubdivisionState => {
-                return Self::new_invalid_subdivision_state_error();
-            }
-
-            ErrorType::NoAvailableSubdivision => {
-                return Self::new_no_available_subdivision_error();
-            }
-
-            ErrorType::FailedSubdivision => {
-                return Self {
-                    debug_description: "Failed to subdivide panel.".to_string(),
-                    description: "Failed to subdivide panel.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::PtyStdinReceiverClosed => {
-                return Self {
-                    debug_description: "The pty's stdin receiver closed.".to_string(),
-                    description: "The pty's stdin receiver closed.".to_string(),
-                    terminate: true,
-                };
-            }
-
-            ErrorType::FailedReadPoll => {
-                return Self {
-                    debug_description: "Failed to poll the pty for data.".to_string(),
-                    description: "Failed to poll the pty for data.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::FailedToSendMessage => {
-                return Self {
-                    debug_description: "Failed to send message from pty thread.".to_string(),
-                    description: "Failed to communicate data from the pty.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::FailedToReadPTY => {
-                return Self {
-                    debug_description: "Failed to read data from pty.".to_string(),
-                    description: "Failed to read data from the pty.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::PTYStoppedRunning => {
-                return Self {
-                    debug_description: "PTY unexpectedly stopped running.".to_string(),
-                    description: "PTY unexpectedly stopped running.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::FailedToWriteToPTY => {
-                return Self {
-                    debug_description: "Failed to write data to PTY.".to_string(),
-                    description: "Failed to write data to PTY.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::NoWorkspaceWithID(id) => {
-                return Self {
-                    debug_description: format!("No workspace with id: {}", id),
-                    description: format!("No workspace number {}", id),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::DisplayLocked => {
-                return Self {
-                    debug_description: "Display is locked.".to_string(),
-                    description: "Display is locked.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::InvalidPassword => {
-                return Self {
-                    debug_description: "Incorrect Password.".to_string(),
-                    description: "Incorrect Password.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::FailedToCheckPassword => {
-                return Self {
-                    debug_description: "Hash comparison failed.".to_string(),
-                    description: "Failed to compare password.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::NoAvailableSubdivisionToMerge => {
-                return Self {
-                    debug_description: "No open subdivision to merge.".to_string(),
-                    description: "No open subdivision to merge.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::NoSubdivisionAtPath => {
-                return Self {
-                    debug_description: "No subdivision at path.".to_string(),
-                    description: "No subdivision at path.".to_string(),
-                    terminate: false,
-                };
-            }
-
-            ErrorType::NoPanelAtPath => {
-                return Self {
-                    debug_description: "No panel at path end.".to_string(),
-                    description: "No panel at path end.".to_string(),
-                    terminate: false,
-                };
-            }
-        };
+        return tp.into_error();
     }
 
     pub fn description(&self) -> String {
@@ -303,191 +170,6 @@ impl MuxideError {
 
     pub fn should_terminate(&self) -> bool {
         return self.terminate;
-    }
-
-    fn new_ioctl_error(code: i32, outcome: String) -> Self {
-        return Self {
-            debug_description: format!("ioctl call returned error code: {}. {}", code, outcome),
-            description: format!("ioctl call returned error code: {}. {}", code, outcome),
-            terminate: true,
-        };
-    }
-
-    fn new_pty_spawn_error(description: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to spawn new PTY. Reason {}", description),
-            description: format!("Failed to spawn new PTY."),
-            terminate: true,
-        };
-    }
-
-    fn new_poll_creation_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to create the IO poll. Reason: {}", reason),
-            description: format!("Failed to create the IO poll."),
-            terminate: true,
-        };
-    }
-
-    fn new_determine_terminal_size_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to determine terminal size. Reason: {}", reason),
-            description: format!("Failed to determine terminal size."),
-            terminate: true,
-        };
-    }
-
-    fn new_polling_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to poll the IO poll. Reason: {}", reason),
-            description: format!("Failed to poll the IO poll."),
-            terminate: true,
-        };
-    }
-
-    fn new_read_io_error(target: String, reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to read from {}. Reason: {}", target, reason),
-            description: format!("Failed to read from {}.", target),
-            terminate: true,
-        };
-    }
-
-    fn new_write_io_error(target: String, reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to write to {}. Reason: {}", target, reason),
-            description: format!("Failed to write to {}.", target),
-            terminate: true,
-        };
-    }
-
-    fn new_stdout_flush_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to flush stdout. Reason: {}", reason),
-            description: "Failed to flush stdout".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_open_pty_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to open pty. Reason: {}", reason),
-            description: "Failed to open pty.".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_fcntl_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed fcntl call. Reason: {}", reason),
-            description: "Failed fcntl call.".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_display_not_running_error() -> Self {
-        return Self {
-            debug_description: "Display is not running".to_string(),
-            description: "Display is not running".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_input_manager_running_error() -> Self {
-        return Self {
-            debug_description: "The input manager is already running".to_string(),
-            description: "The input manager is already running".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_failed_tty_acquisition_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to acquire TTY. Reason: {}", reason),
-            description: "Failed to acquire TTY.".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_enter_raw_mode_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!("Failed to enter TTY raw mode. Reason: {}", reason),
-            description: "Failed to enter TTY raw mode".to_string(),
-            terminate: true,
-        };
-    }
-
-    fn new_no_panel_with_id(id: usize) -> Self {
-        return Self {
-            debug_description: format!("No panel with the id: {}", id),
-            description: format!("No panel with the id: {}", id),
-            terminate: true,
-        };
-    }
-
-    fn new_queue_execute_error(reason: String) -> Self {
-        return Self {
-            debug_description: format!(
-                "Failed to queue or execute display element. Reason: {}",
-                reason
-            ),
-            description: format!(
-                "Failed to queue or execute display element. Reason: {}",
-                reason
-            ),
-            terminate: true,
-        };
-    }
-
-    fn new_script_error(description: String) -> Self {
-        return Self {
-            debug_description: description.clone(),
-            description,
-            terminate: false,
-        };
-    }
-
-    fn new_pty_write_error(description: String) -> Self {
-        return Self {
-            debug_description: description.clone(),
-            description,
-            terminate: true,
-        };
-    }
-
-    fn new_command_error(description: String) -> Self {
-        return Self {
-            debug_description: description.clone(),
-            description,
-            terminate: false,
-        };
-    }
-
-    fn new_event_parsing_error(message: String) -> Self {
-        return Self {
-            debug_description: format!(
-                "Error occurred whilst processing a vt100 event: {}",
-                message
-            ),
-            description: "Failed to process a terminal event.".to_string(),
-            terminate: false,
-        };
-    }
-
-    fn new_invalid_subdivision_state_error() -> Self {
-        return Self {
-            debug_description: "The subdivision is in an invalid state.".to_string(),
-            description: "Failed to render due to invalid subdivision state.".to_string(),
-            terminate: false,
-        };
-    }
-
-    fn new_no_available_subdivision_error() -> Self {
-        return Self {
-            debug_description: "No empty subdivisions.".to_string(),
-            description: "No empty subdivisions".to_string(),
-            terminate: false,
-        };
     }
 }
 

@@ -29,24 +29,14 @@ impl InputManager {
     fn start_internal(&mut self, sender: Sender<Vec<u8>>) -> Result<(), MuxideError> {
         // Ensure this method hasn't been called more than once
         if self.is_running() {
-            return Err(ErrorType::InputManagerRunningError.into_error());
+            return Err(ErrorType::new_input_manager_running_error());
         }
 
         // Put the tty into raw mode
         let mut tty_input = get_tty()
-            .map_err(|e| {
-                ErrorType::FailedTTYAcquisitionError {
-                    reason: format!("{}", e),
-                }
-                .into_error()
-            })?
+            .map_err(|e| ErrorType::new_failed_tty_acquisition_error(format!("{}", e)))?
             .into_raw_mode()
-            .map_err(|e| {
-                ErrorType::EnterRawModeError {
-                    reason: format!("{}", e),
-                }
-                .into_error()
-            })?;
+            .map_err(|e| ErrorType::new_enter_raw_mode_error(format!("{}", e)))?;
         let running = self.running.clone();
         running.store(true, Ordering::SeqCst);
 

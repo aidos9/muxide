@@ -34,17 +34,16 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
         ($tx:expr, $e:expr, $log_message:expr) => {
             error!($log_message);
 
-            let e = $e.into_error();
 
             // This could error out and if it does then we just assume the controller will deal with it.
             select! {
-                _ = $tx.send(PtyMessage::Error(e)) => {},
+                _ = $tx.send(PtyMessage::Error($e)) => {},
                 _ = tokio::time::sleep(Duration::from_millis(ERROR_TIMEOUT_MS)) => {},
             }
         };
 
         ($tx:expr, $e:expr) => {
-            let e = $e.into_error();
+            let e = $e;
             error!(format!(
                 "An error occurred in the pty thread. Error description: {:?}",
                 &e
@@ -89,7 +88,7 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                 res
             }) => {
                 if res.is_err() {
-                    pty_error!(tx, ErrorType::FailedReadPoll, "Something unexpected went wrong whilst reading the pty poll");
+                    pty_error!(tx, ErrorType::new_failed_read_poll_error(), "Something unexpected went wrong whilst reading the pty poll");
                     return;
                 }
 
@@ -100,7 +99,7 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                         }
                     }
                     Err(e) => {
-                        pty_error!(tx, ErrorType::FailedReadPoll, format!("Failed to poll for available data. Error: {}", e));
+                        pty_error!(tx, ErrorType::new_failed_read_poll_error(), format!("Failed to poll for available data. Error: {}", e));
                         return;
                     },
                 }
@@ -111,7 +110,7 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                 if let Ok(count) = res {
                     if count == 0 {
                         if p.running() == Some(false) {
-                            pty_error!(tx, ErrorType::PTYStoppedRunning);
+                            pty_error!(tx, ErrorType::new_pty_stopped_running_error());
                             return;
                         }
                     }
@@ -123,14 +122,14 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                     match tx.send(PtyMessage::Bytes(cpy)).await {
                         Ok(_) => (),
                         Err(_) => {
-                            pty_error!(tx, ErrorType::FailedToSendMessage);
+                            pty_error!(tx, ErrorType::new_failed_to_send_message_error());
                             return;
                         }
                     }
 
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 } else {
-                    pty_error!(tx, ErrorType::FailedToReadPTY);
+                    pty_error!(tx, ErrorType::new_failed_to_read_pty_error());
                     return;
                 }
             },
@@ -142,8 +141,8 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                                 res = p.file().write_all(&bytes) => {
                                     match res {
                                         Ok(_) => (),
-                                        Err(_) => {
-                                            pty_error!(tx, ErrorType::FailedToWriteToPTY);
+                                        Err(e) => {
+                                            pty_error!(tx, ErrorType::new_pty_write_error(e.to_string()));
                                             return;
                                         },
                                     }
@@ -159,7 +158,7 @@ async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<
                         },
                     }
                 } else {
-                    pty_error!(tx, ErrorType::PtyStdinReceiverClosed);
+                    pty_error!(tx, ErrorType::new_pty_stdin_receiver_closed_error());
                     return;
                 }
             }
@@ -206,7 +205,7 @@ impl LogicManager {
         let input_manager = InputManager::start(stdin_tx)?;
         let display = match Display::new(config.clone()).init() {
             Some(d) => d,
-            None => return Err(ErrorType::DisplayNotRunningError.into_error()),
+            None => return Err(ErrorType::new_display_not_running_error()),
         };
 
         return Ok(Self {
@@ -323,12 +322,7 @@ impl LogicManager {
             &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b)),
         ) {
             Ok(e) => e,
-            Err(e) => {
-                return Err(ErrorType::EventParsingError {
-                    message: format!("{}", e),
-                }
-                .into_error())
-            }
+            Err(e) => return Err(ErrorType::new_event_parsing_error(format!("{}", e))),
         };
 
         if !self.shortcut(&event)? {
@@ -450,7 +444,7 @@ impl LogicManager {
 
     fn close_panel(&mut self, id: usize) -> Result<(), MuxideError> {
         if self.panel_with_id(id).is_none() {
-            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+            return Err(ErrorType::new_no_panel_with_id_error(id));
         }
 
         futures::executor::block_on(self.connection_manager.send_shutdown(id));
@@ -470,7 +464,7 @@ impl LogicManager {
 
             return Ok(());
         } else {
-            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+            return Err(ErrorType::new_no_panel_with_id_error(id));
         }
     }
 
@@ -509,17 +503,15 @@ impl LogicManager {
             .key_map()
             .command_for_character(&character)
             .map(|cmd| cmd.clone())
-            .ok_or(
-                ErrorType::CommandError {
-                    description: format!("No command mapped to \'{}\'", character),
-                }
-                .into_error(),
-            );
+            .ok_or(ErrorType::new_command_error(format!(
+                "No command mapped to \'{}\'",
+                character
+            )));
     }
 
     fn execute_command(&mut self, cmd: &Command) -> Result<(), MuxideError> {
         if self.locked {
-            return Err(ErrorType::DisplayLocked.into_error());
+            return Err(ErrorType::new_display_locked_error());
         }
 
         match cmd {
@@ -594,7 +586,7 @@ impl LogicManager {
                     self.update_panel_output(id);
                 }
             }
-            Command::HelpMessageCommand  => {
+            Command::HelpMessageCommand => {
                 self.displaying_help = true;
                 self.display.show_help();
             }
@@ -610,12 +602,12 @@ impl LogicManager {
                 self.config.get_password_ref(),
                 comp.as_str(),
             )
-            .ok_or(ErrorType::FailedToCheckPassword.into_error())?
+            .ok_or(ErrorType::new_failed_to_check_password_error())?
             {
                 self.unlock();
             } else {
                 self.password_input = String::new();
-                return Err(ErrorType::InvalidPassword.into_error());
+                return Err(ErrorType::new_invalid_password_error());
             }
         } else {
             self.unlock();
@@ -649,7 +641,7 @@ impl LogicManager {
             }
 
             if !ok {
-                return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+                return Err(ErrorType::new_no_panel_with_id_error(id));
             }
 
             self.connection_manager.write_resize(id, size).await?;

@@ -34,10 +34,7 @@ const LOCK_SYMBOL: [&'static str; 13] = [
 macro_rules! queue_map_err {
     ($($v:expr),*) => {
         queue!($($v),*).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
+            ErrorType::new_queue_execute_error (e.to_string())
         });
     };
 }
@@ -129,14 +126,14 @@ impl Display {
         content: Vec<Vec<u8>>,
     ) -> Result<(), MuxideError> {
         if !self.completed_initialization {
-            return Err(ErrorType::DisplayNotRunningError.into_error());
+            return Err(ErrorType::new_display_not_running_error());
         }
 
         if let Some(panel) = self.panel_map.get_mut(&id) {
             panel.set_content(content);
             return Ok(());
         } else {
-            return Err(ErrorType::NoPanelWithIDError { id }.into_error());
+            return Err(ErrorType::new_no_panel_with_id_error(id));
         }
     }
 
@@ -144,7 +141,7 @@ impl Display {
         return self
             .root_subdivision()
             .next_panel_details()
-            .ok_or(ErrorType::NoAvailableSubdivision.into_error());
+            .ok_or(ErrorType::new_no_available_subdivision_error());
     }
 
     /// Opens a new panel giving it the specified id. The id should be unique but it is
@@ -158,7 +155,7 @@ impl Display {
         origin: Point<u16>,
     ) -> Result<Vec<(usize, Size)>, MuxideError> {
         if !self.completed_initialization {
-            return Err(ErrorType::DisplayNotRunningError.into_error());
+            return Err(ErrorType::new_display_not_running_error());
         }
 
         let panel = self.init_panel(id, (origin.column(), origin.row()));
@@ -171,7 +168,7 @@ impl Display {
 
     pub fn close_panel(&mut self, id: usize) -> Result<(), MuxideError> {
         if !self.completed_initialization {
-            return Err(ErrorType::DisplayNotRunningError.into_error());
+            return Err(ErrorType::new_display_not_running_error());
         }
 
         if !self.root_subdivision_mut().close_panel_with_id(id) {
@@ -210,7 +207,9 @@ impl Display {
     /// Returns the index of the newly selected panel.
     pub fn switch_to_workspace(&mut self, workspace: u8) -> Result<Option<usize>, MuxideError> {
         if workspace >= 10 {
-            return Err(ErrorType::NoWorkspaceWithID(workspace as usize).into_error());
+            return Err(ErrorType::new_no_workspace_with_id_error(
+                workspace as usize,
+            ));
         }
 
         self.selected_workspace = workspace;
@@ -226,7 +225,7 @@ impl Display {
         let (sz, success) = self.root_subdivision_mut().split_panel(id, direction);
 
         if !success {
-            return Err(ErrorType::FailedSubdivision.into_error());
+            return Err(ErrorType::new_failed_subdivision_error());
         }
 
         return Ok(if let Some(sz) = sz {
@@ -255,12 +254,8 @@ impl Display {
         let size = Self::get_terminal_size()?;
 
         // Clear the terminal
-        queue!(stdout, terminal::Clear(ClearType::All)).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+        queue!(stdout, terminal::Clear(ClearType::All))
+            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
 
         if self.is_locked {
             Self::queue_locked_message(&mut stdout, &size)?;
@@ -273,29 +268,18 @@ impl Display {
         }
 
         if self.error_message.is_some() {
-            self.queue_error_message(&mut stdout, &size).map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+            self.queue_error_message(&mut stdout, &size)
+                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
         }
 
-        self.reset_cursor(&mut stdout, &size).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
-        })?;
+        self.reset_cursor(&mut stdout, &size)
+            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
 
         Self::reset_stdout_style(&mut stdout)?;
 
-        return Ok(stdout.flush().map_err(|e| {
-            ErrorType::StdoutFlushError {
-                reason: format!("{}", e),
-            }
-            .into_error()
-        })?);
+        return Ok(stdout
+            .flush()
+            .map_err(|e| ErrorType::new_stdout_flush_error(format!("{}", e)))?);
     }
 
     fn queue_locked_message(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
@@ -326,7 +310,7 @@ impl Display {
         if help_lines.len() + 2 > (size.get_rows() as usize) {
             starting_row = 2;
         } else {
-            starting_row = 2 + (size.get_rows() - 2 - help_lines.len() as u16 ) / 2;
+            starting_row = 2 + (size.get_rows() - 2 - help_lines.len() as u16) / 2;
         }
 
         let multiple_per_line = ((size.get_cols() as usize) - longest_line - 4) > 0;
@@ -335,7 +319,7 @@ impl Display {
             starting_cols = [0, 0];
         } else {
             if multiple_per_line {
-                let spacing = (size.get_cols() - longest_line as u16 * 2 ) / 3;
+                let spacing = (size.get_cols() - longest_line as u16 * 2) / 3;
 
                 starting_cols = [spacing, spacing + longest_line as u16 + spacing];
             } else {
@@ -350,10 +334,19 @@ impl Display {
                 break;
             }
 
-            queue_map_err!(stdout, cursor::MoveTo(starting_cols[0], starting_row + r), style::Print(help_lines.pop().unwrap()))?;
+            queue_map_err!(
+                stdout,
+                cursor::MoveTo(starting_cols[0], starting_row + r),
+                style::Print(help_lines.pop().unwrap())
+            )?;
 
             if multiple_per_line && help_lines.len() > 0 {
-                queue_map_err!(stdout, cursor::MoveTo(starting_cols[1], starting_row + r), style::Print("    "), style::Print(help_lines.pop().unwrap()))?;
+                queue_map_err!(
+                    stdout,
+                    cursor::MoveTo(starting_cols[1], starting_row + r),
+                    style::Print("    "),
+                    style::Print(help_lines.pop().unwrap())
+                )?;
             }
 
             r += 1;
@@ -364,10 +357,18 @@ impl Display {
                 break;
             }
 
-            queue_map_err!(stdout, cursor::MoveTo(starting_cols[0], starting_row + i as u16), style::Print(line))?;
+            queue_map_err!(
+                stdout,
+                cursor::MoveTo(starting_cols[0], starting_row + i as u16),
+                style::Print(line)
+            )?;
         }
 
-        queue_map_err!(stdout, cursor::MoveTo((size.get_cols() - Self::HELP_TITLE.len() as u16) / 2, 0), style::Print(Self::HELP_TITLE))?;
+        queue_map_err!(
+            stdout,
+            cursor::MoveTo((size.get_cols() - Self::HELP_TITLE.len() as u16) / 2, 0),
+            style::Print(Self::HELP_TITLE)
+        )?;
 
         return Ok(());
     }
@@ -376,10 +377,7 @@ impl Display {
         let (cols, rows) = match terminal::size() {
             Ok(t) => t,
             Err(e) => {
-                return Err(ErrorType::DetermineTerminalSizeError {
-                    reason: e.to_string(),
-                }
-                .into_error());
+                return Err(ErrorType::new_determine_terminal_size_error(e.to_string()));
             }
         };
 
@@ -389,12 +387,8 @@ impl Display {
     /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
     fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
         if self.is_locked || self.display_help_message {
-            execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0)).map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+            execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
+                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
 
             return Ok(());
         }
@@ -409,28 +403,16 @@ impl Display {
                 )?;
 
                 if panel.get_hide_cursor() {
-                    execute!(stdout, cursor::Hide).map_err(|e| {
-                        ErrorType::QueueExecuteError {
-                            reason: e.to_string(),
-                        }
-                        .into_error()
-                    })?;
+                    execute!(stdout, cursor::Hide)
+                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
                 } else {
-                    execute!(stdout, cursor::Show).map_err(|e| {
-                        ErrorType::QueueExecuteError {
-                            reason: e.to_string(),
-                        }
-                        .into_error()
-                    })?;
+                    execute!(stdout, cursor::Show)
+                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
                 }
             }
             None => {
-                execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0)).map_err(|e| {
-                    ErrorType::QueueExecuteError {
-                        reason: e.to_string(),
-                    }
-                    .into_error()
-                })?;
+                execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
+                    .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
             }
         }
 
@@ -458,12 +440,7 @@ impl Display {
                 terminal_size.get_cols(),
                 vertical_character,
             )
-            .map_err(|e| {
-                ErrorType::QueueExecuteError {
-                    reason: e.to_string(),
-                }
-                .into_error()
-            })?;
+            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
 
             // Print the bottom row
 

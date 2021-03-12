@@ -72,10 +72,7 @@ impl<T: PrimInt + Unsigned> Point<T> {
     /// Treats (0, 0) as the origin.
     #[allow(dead_code)]
     pub fn new(column: T, row: T) -> Self {
-        return Self {
-            x: column,
-            y: row,
-        };
+        return Self { x: column, y: row };
     }
 
     /// Get, the x component of this point

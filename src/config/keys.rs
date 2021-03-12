@@ -117,12 +117,15 @@ impl Keys {
 
         if let Some(character_shortcut) = single_character_shortcut {
             let key_string = key_to_string(character_shortcut).unwrap();
-            let mut single_character_descriptions = self.single_key_map.iter().collect::<Vec<(&char, &Command)>>();
+            let mut single_character_descriptions = self
+                .single_key_map
+                .iter()
+                .collect::<Vec<(&char, &Command)>>();
             single_character_descriptions.sort_by(|(a_char, _), (b_char, _)| a_char.cmp(b_char));
 
             let mut iterator = single_character_descriptions.into_iter();
 
-            while let Some((key, command)) = iterator.next_back()  {
+            while let Some((key, command)) = iterator.next_back() {
                 if let Some(help_text) = command.help_text() {
                     let line = format!("{} {} - {}", key_string, key, help_text);
 

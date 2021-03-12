@@ -12,10 +12,7 @@ const EMPTY_TEXT: &'static str = "No Panels Open";
 macro_rules! queue_map_err {
     ($($v:expr),*) => {
         queue!($($v),*).map_err(|e| {
-            ErrorType::QueueExecuteError {
-                reason: e.to_string(),
-            }
-            .into_error()
+            ErrorType::new_queue_execute_error (e.to_string())
         });
     };
 }
@@ -165,13 +162,13 @@ impl SubDivision {
         panel_id: Option<usize>,
     ) -> Result<Option<Size>, MuxideError> {
         if self.subdiv_a.is_none() && self.subdiv_b.is_none() {
-            return Err(ErrorType::NoAvailableSubdivisionToMerge.into_error());
+            return Err(ErrorType::new_no_available_subdivision_to_merge_error());
         }
 
         if let Some(panel_id) = panel_id {
             let path = self
                 .path_for_panel_id(panel_id)
-                .ok_or(ErrorType::NoPanelWithIDError { id: panel_id }.into_error())?;
+                .ok_or(ErrorType::new_no_panel_with_id_error(panel_id))?;
 
             if path.is_empty() {
                 return Ok(None);
@@ -193,7 +190,7 @@ impl SubDivision {
                         return Ok(None);
                     }
                 } else {
-                    return Err(ErrorType::InvalidSubdivisionState.into_error());
+                    return Err(ErrorType::new_invalid_subdivision_state_error());
                 }
 
                 return Ok(Some(self.set_panel(panel)));
@@ -218,7 +215,7 @@ impl SubDivision {
                         return Ok(None);
                     }
                 } else {
-                    return Err(ErrorType::InvalidSubdivisionState.into_error());
+                    return Err(ErrorType::new_invalid_subdivision_state_error());
                 }
 
                 return Ok(Some(parent.set_panel(panel)));
@@ -582,7 +579,7 @@ impl SubDivision {
 
             return Ok(());
         } else {
-            return Err(ErrorType::InvalidSubdivisionState.into_error());
+            return Err(ErrorType::new_invalid_subdivision_state_error());
         }
     }
 
