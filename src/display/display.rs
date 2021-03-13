@@ -79,9 +79,9 @@ impl Display {
         };
 
         let dimensions = if self.config.environment_ref().show_workspaces() {
-            Self::get_terminal_size().ok()? - Size::new(2, 0)
+            Self::terminal_size().ok()? - Size::new(2, 0)
         } else {
-            Self::get_terminal_size().ok()?
+            Self::terminal_size().ok()?
         };
 
         for workspace in &mut self.workspaces {
@@ -102,24 +102,52 @@ impl Display {
         return Some(self);
     }
 
-    pub fn show_help(&mut self) {
-        self.display_help_message = true;
-    }
+    /// Render the contents of the display to stdout.
+    pub fn render(&mut self) -> Result<(), MuxideError> {
+        if !self.completed_initialization {
+            return Ok(());
+        }
 
-    pub fn hide_help(&mut self) {
-        self.display_help_message = false;
-    }
+        let mut stdout = stdout();
+        let size = Self::terminal_size()?;
 
-    pub fn lock(&mut self) {
-        self.is_locked = true;
-    }
+        // Clear the terminal
+        queue!(stdout, terminal::Clear(ClearType::All))
+            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
 
-    pub fn unlock(&mut self) {
-        self.is_locked = false;
+        if self.is_locked {
+            Self::queue_locked_message(&mut stdout, &size)?;
+        } else if self.display_help_message {
+            self.queue_help_message(&mut stdout, &size)?;
+        } else {
+            self.queue_main_borders(&mut stdout, &size)?;
+
+            self.root_subdivision_ref()
+                .render(&mut stdout, &self.config)?;
+        }
+
+        if self.error_message.is_some() {
+            self.queue_error_message(&mut stdout, &size)
+                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+        }
+
+        self.reset_cursor(&mut stdout, &size)
+            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+
+        queue_map_err!(stdout, style::ResetColor)?;
+
+        return Ok(stdout
+            .flush()
+            .map_err(|e| ErrorType::new_stdout_flush_error(format!("{}", e)))?);
     }
 
     /// Set the contents of a panel
-    /// Error: If no panel exists with the specified id, or if init has not been run
+    ///
+    /// # Errors
+    /// Possible errors:
+    ///
+    /// * If no panel exists with the specified id
+    /// * If [`init`](Display::init) has not been run
     pub fn update_panel_content(
         &mut self,
         id: usize,
@@ -139,7 +167,7 @@ impl Display {
 
     pub fn next_panel_details(&self) -> Result<(SubdivisionPath, Size, Point<u16>), MuxideError> {
         return self
-            .root_subdivision()
+            .root_subdivision_ref()
             .next_panel_details()
             .ok_or(ErrorType::new_no_available_subdivision_error());
     }
@@ -166,6 +194,10 @@ impl Display {
         return Ok(vec![(id, size)]);
     }
 
+    /// Tries to close a panel.
+    ///
+    /// # Errors
+    /// Returns an error if the display has not been initialized or no panel exists with that id.
     pub fn close_panel(&mut self, id: usize) -> Result<(), MuxideError> {
         if !self.completed_initialization {
             return Err(ErrorType::new_display_not_running_error());
@@ -174,10 +206,13 @@ impl Display {
         if !self.root_subdivision_mut().close_panel_with_id(id) {
             panic!("No panel with an id: {}", id);
         } else {
-            if let Some(panel) = self.selected_panel() {
+            if let Some(panel) = self.selected_panel_ref() {
                 if panel.get_id() == id {
-                    self.selected_workspace_mut().selected_panel =
-                        self.selected_workspace().panels.first().map(|p| p.clone());
+                    self.selected_workspace_mut().selected_panel = self
+                        .selected_workspace_ref()
+                        .panels
+                        .first()
+                        .map(|p| p.clone());
                 }
             }
 
@@ -200,7 +235,7 @@ impl Display {
     }
 
     pub fn focus_direction(&mut self, direction: Direction) -> Option<usize> {
-        let id = self.selected_panel().map(|p| p.get_id())?;
+        let id = self.selected_panel_ref().map(|p| p.get_id())?;
         return self.root_subdivision_mut().focus_next_id(id, direction);
     }
 
@@ -213,7 +248,63 @@ impl Display {
         }
 
         self.selected_workspace = workspace;
-        return Ok(self.selected_panel().map(|p| p.get_id()));
+        return Ok(self.selected_panel_ref().map(|p| p.get_id()));
+    }
+
+    /// Sets the error message to be rendered the next time [`render`](Display::render) is called.
+    pub fn set_error_message(&mut self, message: String) {
+        self.error_message = Some(message);
+    }
+
+    /// Don't show an error message the next time [`render`](Display::render) is called.
+    pub fn clear_error_message(&mut self) {
+        self.error_message = None;
+    }
+
+    /// Change the selected panel.
+    pub fn set_selected_panel(&mut self, id: Option<usize>) {
+        if id.is_none() {
+            self.selected_workspace_mut().selected_panel = None;
+            return;
+        }
+
+        let id = id.unwrap();
+
+        self.selected_workspace_mut().selected_panel = self.panel_map.get(&id).map(|p| p.clone());
+    }
+
+    pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
+        if let Some(panel) = self.panel_map.get_mut(&id) {
+            panel.set_cursor_position(col, row);
+            panel.set_hide_cursor(hide);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    pub fn merge_selected_panel(&mut self) -> Result<Option<(usize, Size)>, MuxideError> {
+        let id = self.selected_panel_ref().map(|p| p.get_id());
+        return self
+            .root_subdivision_mut()
+            .merge_selected_panel(id)
+            .map(|opt| opt.map(|sz| (id.unwrap(), sz)));
+    }
+
+    pub fn show_help(&mut self) {
+        self.display_help_message = true;
+    }
+
+    pub fn hide_help(&mut self) {
+        self.display_help_message = false;
+    }
+
+    pub fn lock(&mut self) {
+        self.is_locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.is_locked = false;
     }
 
     /// Subdivide the currently selected panel into two panels split with the specified line down the middle
@@ -221,7 +312,7 @@ impl Display {
         &mut self,
         direction: SubDivisionSplit,
     ) -> Result<Vec<(usize, Size)>, MuxideError> {
-        let id = self.selected_panel().map(|p| p.get_id());
+        let id = self.selected_panel_ref().map(|p| p.get_id());
         let (sz, success) = self.root_subdivision_mut().split_panel(id, direction);
 
         if !success {
@@ -229,7 +320,7 @@ impl Display {
         }
 
         return Ok(if let Some(sz) = sz {
-            vec![(self.selected_panel().unwrap().get_id(), sz)]
+            vec![(self.selected_panel_ref().unwrap().get_id(), sz)]
         } else {
             Vec::new()
         });
@@ -244,42 +335,39 @@ impl Display {
         return panel;
     }
 
-    /// Render the contents of the display to stdout.
-    pub fn render(&mut self) -> Result<(), MuxideError> {
-        if !self.completed_initialization {
+    /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
+    fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
+        if self.is_locked || self.display_help_message {
+            execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
+                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+
             return Ok(());
         }
 
-        let mut stdout = stdout();
-        let size = Self::get_terminal_size()?;
+        match self.selected_panel_ref() {
+            Some(panel) => {
+                let loc = panel.get_cursor_position();
 
-        // Clear the terminal
-        queue!(stdout, terminal::Clear(ClearType::All))
-            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+                queue_map_err!(
+                    stdout,
+                    cursor::MoveTo(loc.column(), loc.row()) // Column, row
+                )?;
 
-        if self.is_locked {
-            Self::queue_locked_message(&mut stdout, &size)?;
-        } else if self.display_help_message {
-            self.queue_help_message(&mut stdout, &size)?;
-        } else {
-            self.queue_main_borders(&mut stdout, &size)?;
-
-            self.root_subdivision().render(&mut stdout, &self.config)?;
+                if panel.get_hide_cursor() {
+                    execute!(stdout, cursor::Hide)
+                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+                } else {
+                    execute!(stdout, cursor::Show)
+                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+                }
+            }
+            None => {
+                execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
+                    .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
+            }
         }
 
-        if self.error_message.is_some() {
-            self.queue_error_message(&mut stdout, &size)
-                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-        }
-
-        self.reset_cursor(&mut stdout, &size)
-            .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-
-        Self::reset_stdout_style(&mut stdout)?;
-
-        return Ok(stdout
-            .flush()
-            .map_err(|e| ErrorType::new_stdout_flush_error(format!("{}", e)))?);
+        return Ok(());
     }
 
     fn queue_locked_message(stdout: &mut Stdout, size: &Size) -> Result<(), MuxideError> {
@@ -373,52 +461,6 @@ impl Display {
         return Ok(());
     }
 
-    fn get_terminal_size() -> Result<Size, MuxideError> {
-        let (cols, rows) = match terminal::size() {
-            Ok(t) => t,
-            Err(e) => {
-                return Err(ErrorType::new_determine_terminal_size_error(e.to_string()));
-            }
-        };
-
-        return Ok(Size::new(rows, cols));
-    }
-
-    /// Moves the cursor to the correct position and changes it to hidden or visible appropriately
-    fn reset_cursor(&self, stdout: &mut Stdout, _terminal_size: &Size) -> Result<(), MuxideError> {
-        if self.is_locked || self.display_help_message {
-            execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
-                .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-
-            return Ok(());
-        }
-
-        match self.selected_panel() {
-            Some(panel) => {
-                let loc = panel.get_cursor_position();
-
-                queue_map_err!(
-                    stdout,
-                    cursor::MoveTo(loc.column(), loc.row()) // Column, row
-                )?;
-
-                if panel.get_hide_cursor() {
-                    execute!(stdout, cursor::Hide)
-                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-                } else {
-                    execute!(stdout, cursor::Show)
-                        .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-                }
-            }
-            None => {
-                execute!(stdout, cursor::Hide, cursor::MoveTo(0, 0))
-                    .map_err(|e| ErrorType::new_queue_execute_error(e.to_string()))?;
-            }
-        }
-
-        return Ok(());
-    }
-
     /// Queues the outer border for display in stdout
     fn queue_main_borders(
         &self,
@@ -429,7 +471,7 @@ impl Display {
         let intersection_character = self.config.borders_ref().get_intersection_char();
         let vertical_character = self.config.borders_ref().get_vertical_char();
 
-        Self::reset_stdout_style(stdout)?;
+        queue_map_err!(stdout, style::ResetColor)?;
 
         if self.config.environment_ref().show_workspaces() {
             // Print the workspaces
@@ -457,7 +499,7 @@ impl Display {
             )?;
         }
 
-        Self::reset_stdout_style(stdout)?;
+        queue_map_err!(stdout, style::ResetColor)?;
 
         return Ok(());
     }
@@ -584,13 +626,18 @@ impl Display {
         return Ok(());
     }
 
-    fn reset_stdout_style(stdout: &mut Stdout) -> Result<(), MuxideError> {
-        queue_map_err!(stdout, style::ResetColor)?;
+    fn terminal_size() -> Result<Size, MuxideError> {
+        let (cols, rows) = match terminal::size() {
+            Ok(t) => t,
+            Err(e) => {
+                return Err(ErrorType::new_determine_terminal_size_error(e.to_string()));
+            }
+        };
 
-        return Ok(());
+        return Ok(Size::new(rows, cols));
     }
 
-    fn selected_workspace(&self) -> &Workspace {
+    fn selected_workspace_ref(&self) -> &Workspace {
         return self
             .workspaces
             .get(self.selected_workspace as usize)
@@ -604,52 +651,15 @@ impl Display {
             .unwrap();
     }
 
-    fn selected_panel(&self) -> Option<&PanelPtr> {
-        return self.selected_workspace().selected_panel.as_ref();
+    fn selected_panel_ref(&self) -> Option<&PanelPtr> {
+        return self.selected_workspace_ref().selected_panel.as_ref();
     }
 
-    fn root_subdivision(&self) -> &SubDivision {
-        return &self.selected_workspace().root_subdivision;
+    fn root_subdivision_ref(&self) -> &SubDivision {
+        return &self.selected_workspace_ref().root_subdivision;
     }
 
     fn root_subdivision_mut(&mut self) -> &mut SubDivision {
         return &mut self.selected_workspace_mut().root_subdivision;
-    }
-
-    pub fn set_error_message(&mut self, message: String) {
-        self.error_message = Some(message);
-    }
-
-    pub fn clear_error_message(&mut self) {
-        self.error_message = None;
-    }
-
-    pub fn set_selected_panel(&mut self, id: Option<usize>) {
-        if id.is_none() {
-            self.selected_workspace_mut().selected_panel = None;
-            return;
-        }
-
-        let id = id.unwrap();
-
-        self.selected_workspace_mut().selected_panel = self.panel_map.get(&id).map(|p| p.clone());
-    }
-
-    pub fn update_panel_cursor(&mut self, id: usize, col: u16, row: u16, hide: bool) -> bool {
-        if let Some(panel) = self.panel_map.get_mut(&id) {
-            panel.set_cursor_position(col, row);
-            panel.set_hide_cursor(hide);
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    pub fn merge_selected_panel(&mut self) -> Result<Option<(usize, Size)>, MuxideError> {
-        let id = self.selected_panel().map(|p| p.get_id());
-        return self
-            .root_subdivision_mut()
-            .merge_selected_panel(id)
-            .map(|opt| opt.map(|sz| (id.unwrap(), sz)));
     }
 }

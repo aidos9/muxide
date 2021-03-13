@@ -317,12 +317,19 @@ impl LogicManager {
             return Ok(());
         }
 
-        let event = match event::parse_event(
-            *bytes.first().unwrap(),
-            &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b)),
-        ) {
-            Ok(e) => e,
-            Err(e) => return Err(ErrorType::new_event_parsing_error(format!("{}", e))),
+        let event = {
+            let first = *bytes.first().unwrap();
+
+            // For some reason, parse_event in termion doesn't support a single escape key.
+            // So use this hack until we develop a custom processor.
+            if first == 0x1b && bytes.len() == 1 {
+                Event::Key(event::Key::Esc)
+            } else {
+                match event::parse_event(first, &mut bytes[1..bytes.len()].iter().map(|b| Ok(*b))) {
+                    Ok(e) => e,
+                    Err(e) => return Err(ErrorType::new_event_parsing_error(format!("{}", e))),
+                }
+            }
         };
 
         if !self.shortcut(&event)? {
