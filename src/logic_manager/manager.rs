@@ -1,4 +1,6 @@
-use crate::channel_controller::{ChannelController, ChannelID, PtyMessage, ServerMessage};
+use super::panel::Panel;
+use super::pty_manager::pty_manager;
+use crate::pty_controller::{PtyController, PtyId};
 use crate::command::Command;
 use crate::config::Config;
 use crate::display::Display;
@@ -8,171 +10,10 @@ use crate::hasher;
 use crate::input_manager::InputManager;
 use crate::pty::Pty;
 use binary_set::BinaryTreeSet;
-use muxide_logging::error;
-use nix::poll;
 use rand::Rng;
-use std::os::unix::io::AsRawFd;
 use termion::event::{self, Event};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::select;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use tokio::time::Duration;
 use vt100::Parser;
-
-/// The timeout used when we poll the PTY for if it is available.
-const POLL_TIMEOUT_MS: i32 = 100;
-/// THe timeout used when reporting an error.
-const ERROR_TIMEOUT_MS: u64 = 100;
-/// THe timeout used when writing to a file.
-const FILE_TIMEOUT_MS: u64 = 750;
-
-/// This method runs a pty, handling shutdown messages, stdin and stdout.
-/// It should be spawned in a thread.
-async fn pty_manager(mut p: Pty, tx: Sender<PtyMessage>, mut stdin_rx: Receiver<ServerMessage>) {
-    macro_rules! pty_error {
-        ($tx:expr, $e:expr, $log_message:expr) => {
-            error!($log_message);
-
-
-            // This could error out and if it does then we just assume the controller will deal with it.
-            select! {
-                _ = $tx.send(PtyMessage::Error($e)) => {},
-                _ = tokio::time::sleep(Duration::from_millis(ERROR_TIMEOUT_MS)) => {},
-            }
-        };
-
-        ($tx:expr, $e:expr) => {
-            let e = $e;
-            error!(format!(
-                "An error occurred in the pty thread. Error description: {:?}",
-                &e
-            ));
-
-            // This could error out and if it does then we just assume the controller will deal with it.
-            select! {
-                _ = $tx.send(PtyMessage::Error(e)) => {},
-                _ = tokio::time::sleep(Duration::from_millis(ERROR_TIMEOUT_MS)) => {},
-            }
-        };
-    };
-
-    let pfd = poll::PollFd::new(p.as_raw_fd(), poll::PollFlags::POLLIN);
-
-    loop {
-        select! {
-            res = tokio::spawn(async move {
-                // For some reason rust reports that this value is unassigned.
-                #[allow(unused_assignments)]
-                let mut res = Ok(false);
-
-                loop {
-                    match poll::poll(&mut [pfd], POLL_TIMEOUT_MS) {
-                        Ok(poll_response) => {
-                            // If we get 0, that means the call timed out, a negative value is an error
-                            // in my understanding but nix, I believe should handle that as an error
-                            if poll_response > 0 {
-                                //res = true;
-                                res = Ok(true);
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            // If we receive an error here, it is a first class (unrecoverable) error.
-                            res = Err(e);
-                            break;
-                        },
-                    }
-                }
-
-                res
-            }) => {
-                if res.is_err() {
-                    pty_error!(tx, ErrorType::new_failed_read_poll_error(), "Something unexpected went wrong whilst reading the pty poll");
-                    return;
-                }
-
-                match res.unwrap() {
-                    Ok(b) => {
-                        if !b {
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        pty_error!(tx, ErrorType::new_failed_read_poll_error(), format!("Failed to poll for available data. Error: {}", e));
-                        return;
-                    },
-                }
-
-                let mut buf = vec![0u8; 4096];
-                let res = p.file().read(&mut buf).await;
-
-                if let Ok(count) = res {
-                    if count == 0 {
-                        if p.running() == Some(false) {
-                            pty_error!(tx, ErrorType::new_pty_stopped_running_error());
-                            return;
-                        }
-                    }
-
-                    let mut cpy = vec![0u8; count];
-                    cpy.copy_from_slice(&buf[0..count]);
-
-                    // Ignore any errors with communicating data.
-                    match tx.send(PtyMessage::Bytes(cpy)).await {
-                        Ok(_) => (),
-                        Err(_) => {
-                            pty_error!(tx, ErrorType::new_failed_to_send_message_error());
-                            return;
-                        }
-                    }
-
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                } else {
-                    pty_error!(tx, ErrorType::new_failed_to_read_pty_error());
-                    return;
-                }
-            },
-            res = stdin_rx.recv() => {
-                if let Some(message) = res {
-                    match message {
-                        ServerMessage::Bytes(bytes) => {
-                            select! {
-                                res = p.file().write_all(&bytes) => {
-                                    match res {
-                                        Ok(_) => (),
-                                        Err(e) => {
-                                            pty_error!(tx, ErrorType::new_pty_write_error(e.to_string()));
-                                            return;
-                                        },
-                                    }
-                                },
-                                _ = tokio::time::sleep(Duration::from_millis(FILE_TIMEOUT_MS)) => {},
-                            }
-                        },
-                        ServerMessage::Resize(size) => {
-                            p.resize(&size).unwrap();
-                        },
-                        ServerMessage::Shutdown => {
-                            break;
-                        },
-                    }
-                } else {
-                    pty_error!(tx, ErrorType::new_pty_stdin_receiver_closed_error());
-                    return;
-                }
-            }
-        }
-    }
-}
-
-/// Represents a panel, i.e. the output for a process. It tracks the contents being
-/// displayed and assigns an id.
-struct Panel {
-    parser: Parser,
-    id: usize,
-    current_scrollback: usize,
-}
 
 /// Handles a majority of the overall application logic, i.e. receiving stdin input and the panel
 /// outputs, managing the display and executing most commands.
@@ -183,7 +24,7 @@ pub struct LogicManager {
     halt_execution: bool,
     single_key_command: bool,
     config: Config,
-    connection_manager: ChannelController,
+    connection_manager: PtyController,
     _input_manager: InputManager,
     close_handles: Vec<(usize, JoinHandle<()>)>,
     ids: BinaryTreeSet<usize>,
@@ -201,7 +42,7 @@ impl LogicManager {
     pub fn new(config: Config, hashed_password: Option<String>) -> Result<Self, MuxideError> {
         // Create a new channel controller with a stdin transmitter which we will use in the input
         // manager to send stdin input to the channel controller
-        let (connection_manager, stdin_tx) = ChannelController::new();
+        let (connection_manager, stdin_tx) = PtyController::new();
         let input_manager = InputManager::start(stdin_tx)?;
         let display = match Display::new(config.clone()).init() {
             Some(d) => d,
@@ -242,7 +83,7 @@ impl LogicManager {
 
             match res {
                 Ok(res) => {
-                    if let ChannelID::Pty(id) = res.id {
+                    if let PtyId::Pty(id) = res.id {
                         self.handle_panel_output(id, res.bytes);
                     } else {
                         let displaying_help = self.displaying_help;
@@ -265,7 +106,7 @@ impl LogicManager {
                     }
                 }
                 Err(details) => {
-                    if let ChannelID::Pty(id) = details.id {
+                    if let PtyId::Pty(id) = details.id {
                         if let Err(e) = self.remove_panel(id) {
                             if e.should_terminate() {
                                 self.shutdown().await;
@@ -387,7 +228,7 @@ impl LogicManager {
     fn handle_panel_output(&mut self, id: usize, bytes: Vec<u8>) {
         let panel = self.panel_with_id(id).unwrap();
 
-        panel.parser.process(&bytes);
+        panel.parser_mut().process(&bytes);
         panel.clear_scrollback();
 
         self.update_panel_output(id);
@@ -397,13 +238,14 @@ impl LogicManager {
         let panel = self.panel_with_id(id).unwrap();
 
         let content = panel
-            .parser
+            .parser_ref()
             .screen()
-            .rows_formatted(0, panel.parser.screen().size().1)
+            .rows_formatted(0, panel.parser_ref().screen().size().1)
             .collect();
 
-        let (curs_row, curs_col) = panel.parser.screen().cursor_position();
-        let cursor_hidden = panel.parser.screen().hide_cursor() || panel.current_scrollback != 0;
+        let (curs_row, curs_col) = panel.parser_ref().screen().cursor_position();
+        let cursor_hidden =
+            panel.parser_ref().screen().hide_cursor() || panel.current_scrollback() != 0;
 
         self.display.update_panel_content(id, content).unwrap();
 
@@ -487,7 +329,7 @@ impl LogicManager {
         }
 
         for i in 0..self.panels.len() {
-            if self.panels[i].id == id {
+            if self.panels[i].id() == id {
                 self.panels.remove(i);
                 break;
             }
@@ -495,7 +337,7 @@ impl LogicManager {
 
         if let Some(sel_id) = self.selected_panel {
             if sel_id == id {
-                self.select_panel(self.panels.first().map(|p| p.id));
+                self.select_panel(self.panels.first().map(|p| p.id()));
             }
         }
 
@@ -639,10 +481,12 @@ impl LogicManager {
             let mut ok = false;
 
             for panel in &mut self.panels {
-                if panel.id == id {
+                if panel.id() == id {
                     ok = true;
 
-                    panel.parser.set_size(size.get_rows(), size.get_cols());
+                    panel
+                        .parser_mut()
+                        .set_size(size.get_rows(), size.get_cols());
                     break;
                 }
             }
@@ -669,7 +513,7 @@ impl LogicManager {
 
     fn panel_with_id(&mut self, id: usize) -> Option<&mut Panel> {
         for panel in &mut self.panels {
-            if panel.id == id {
+            if panel.id() == id {
                 return Some(panel);
             }
         }
@@ -686,35 +530,5 @@ impl LogicManager {
         }
 
         return next_id;
-    }
-}
-
-impl Panel {
-    pub fn new(id: usize, parser: Parser) -> Self {
-        return Self {
-            parser,
-            id,
-            current_scrollback: 0,
-        };
-    }
-
-    pub fn scroll_up(&mut self, lines: usize) {
-        self.current_scrollback += lines;
-        let previous = self.parser.screen().scrollback();
-        self.parser.set_scrollback(self.current_scrollback);
-
-        if self.parser.screen().scrollback() == previous {
-            self.current_scrollback -= lines;
-        }
-    }
-
-    pub fn scroll_down(&mut self, lines: usize) {
-        self.current_scrollback = self.current_scrollback.checked_sub(lines).unwrap_or(0);
-        self.parser.set_scrollback(self.current_scrollback);
-    }
-
-    pub fn clear_scrollback(&mut self) {
-        self.current_scrollback = 0;
-        self.parser.set_scrollback(self.current_scrollback);
     }
 }

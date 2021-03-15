@@ -5,6 +5,7 @@ use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::{self, Duration};
 
+/// A message from the [PtyController] to the PTY
 #[derive(Clone, Debug, Hash)]
 pub enum ServerMessage {
     Bytes(Vec<u8>),
@@ -12,44 +13,48 @@ pub enum ServerMessage {
     Shutdown,
 }
 
+/// A message from the PTY to the [PtyController].
 #[derive(Clone, Debug, Hash)]
 pub enum PtyMessage {
     Bytes(Vec<u8>),
     Error(MuxideError),
 }
 
+/// Used to identify the source of a message in [PtyController]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum ChannelID {
+pub enum PtyId {
     Pty(usize),
     Stdin,
 }
 
+/// A response from the [PtyController] contains an id and the content of the message.
 #[derive(Clone, Debug)]
 pub struct ControllerResponse {
     pub bytes: Vec<u8>,
-    pub id: ChannelID,
+    pub id: PtyId,
 }
 
+/// Indicates an error in the [PtyController] with the ID of the PTY/Channel that caused the error.
 #[derive(Clone, Debug)]
 pub struct ChannelWaitFail {
-    pub id: ChannelID,
+    pub id: PtyId,
     pub error: Option<MuxideError>,
 }
 
-/// Represents a pty, storing the id of the channels and two for communication with the channel and
-/// 1 to signal a shutdown.
+/// Represents a PTY, storing the id of the PTY and two channels for communication with the PTY.
 struct Channel {
     id: usize,
     rx: Receiver<PtyMessage>,
     tx: Sender<ServerMessage>,
 }
 
-pub struct ChannelController {
+/// A controller which communicates to the PTY's in their thread with updates for the PTY's or updates from the PTYs.
+pub struct PtyController {
     stdin_rx: Receiver<Vec<u8>>,
     ptys: Vec<Channel>,
 }
 
-impl ChannelController {
+impl PtyController {
     /// The size of the buffer for the mpsc channels
     const BUFFER_SIZE: usize = 100;
     /// The amount of time allowed for each pty to shutdown
@@ -134,13 +139,13 @@ impl ChannelController {
     /// that has shutdown.
     pub async fn wait_for_message(&mut self) -> Result<ControllerResponse, ChannelWaitFail> {
         let bytes;
-        let channel_id: ChannelID;
+        let channel_id: PtyId;
         let mut error = None;
         let mut index = None;
 
         if self.ptys.is_empty() {
             bytes = self.stdin_rx.recv().await;
-            channel_id = ChannelID::Stdin;
+            channel_id = PtyId::Stdin;
         } else {
             tokio::select! {
                 b = self.stdin_rx.recv() => {
@@ -170,9 +175,9 @@ impl ChannelController {
             }
 
             if let Some(i) = index {
-                channel_id = ChannelID::Pty(self.ptys[i].id);
+                channel_id = PtyId::Pty(self.ptys[i].id);
             } else {
-                channel_id = ChannelID::Stdin;
+                channel_id = PtyId::Stdin;
             }
         }
 
@@ -182,7 +187,7 @@ impl ChannelController {
                 id: channel_id,
             });
         } else {
-            if channel_id != ChannelID::Stdin {
+            if channel_id != PtyId::Stdin {
                 self.ptys.remove(index.unwrap());
             }
 

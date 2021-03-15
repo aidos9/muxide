@@ -1,4 +1,4 @@
-mod channel_controller;
+mod pty_controller;
 mod color;
 mod command;
 mod config;
