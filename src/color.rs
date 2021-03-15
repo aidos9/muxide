@@ -3,43 +3,49 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 lazy_static! {
+    /// Contains information about the terminal if available.
     static ref TERMINFO_DATABASE: Option<terminfo::Database> = terminfo::Database::from_env().ok();
 }
 
+/// Helper macro for defining a new named color.
 macro_rules! define_new_color {
     ($name:tt, $r:literal, $g:literal, $b:literal) => {
         pub const $name: Self = Self {
-            r: $r,
-            g: $g,
-            b: $b,
+            red: $r,
+            green: $g,
+            blue: $b,
         };
     };
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+/// Represents a Color using an RGB representation.
 pub struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
+    red: u8,
+    green: u8,
+    blue: u8,
 }
 
 impl Color {
-    pub const fn new(r: u8, g: u8, b: u8) -> Self {
-        return Self { r, g, b };
+    // Color constants
+    define_new_color!(RED, 255, 0, 0);
+    define_new_color!(GREEN, 0, 255, 0);
+    define_new_color!(ORANGE, 255, 165, 0);
+    define_new_color!(BLUE, 0, 0, 255);
+    define_new_color!(MAGENTA, 128, 0, 128);
+    define_new_color!(CYAN, 0, 255, 255);
+    define_new_color!(TEAL, 0, 128, 128);
+    define_new_color!(YELLOW, 255, 255, 0);
+    define_new_color!(GREY, 128, 128, 128);
+    define_new_color!(WHITE, 255, 255, 255);
+    define_new_color!(BLACK, 0, 0, 0);
+
+    /// Create a new color from the specified RGB values.
+    pub const fn new(red: u8, green: u8, blue: u8) -> Self {
+        return Self { red, green, blue };
     }
 
-    pub fn r(&self) -> u8 {
-        return self.r;
-    }
-
-    pub fn g(&self) -> u8 {
-        return self.g;
-    }
-
-    pub fn b(&self) -> u8 {
-        return self.b;
-    }
-
+    /// Returns a Crossterm [Color](crossterm::style::Color) representation.
     pub fn crossterm_color(&self, default: crossterm::style::Color) -> crossterm::style::Color {
         use crossterm::style::Color as cColor;
 
@@ -51,9 +57,9 @@ impl Color {
             {
                 if b.0 {
                     return cColor::Rgb {
-                        r: self.r(),
-                        g: self.g(),
-                        b: self.b(),
+                        r: self.red,
+                        g: self.green,
+                        b: self.blue,
                     };
                 }
             }
@@ -84,18 +90,14 @@ impl Color {
         }
     }
 
-    define_new_color!(RED, 255, 0, 0);
-    define_new_color!(GREEN, 0, 255, 0);
-    define_new_color!(ORANGE, 255, 165, 0);
-    define_new_color!(BLUE, 0, 0, 255);
-    define_new_color!(MAGENTA, 128, 0, 128);
-    define_new_color!(CYAN, 0, 255, 255);
-    define_new_color!(TEAL, 0, 128, 128);
-    define_new_color!(YELLOW, 255, 255, 0);
-    define_new_color!(GREY, 128, 128, 128);
-    define_new_color!(WHITE, 255, 255, 255);
-    define_new_color!(BLACK, 0, 0, 0);
-
+    /// Constructs a new color from an RGB string.
+    ///
+    /// # Expected format:
+    /// No spaces and commas separating the red, green and blue values.
+    /// r,g,b - 123,123,123
+    ///
+    /// # Errors
+    /// Errors occur from invalid formatting
     pub fn from_rgb_string(string: String) -> Result<Self, String> {
         let characters: Vec<char> = string.chars().collect();
 
@@ -159,9 +161,9 @@ impl Color {
         }
 
         return Ok(Self {
-            r: r.unwrap(),
-            g: g.unwrap(),
-            b: b.unwrap(),
+            red: r.unwrap(),
+            green: g.unwrap(),
+            blue: b.unwrap(),
         });
     }
 }
@@ -169,6 +171,7 @@ impl Color {
 impl TryFrom<String> for Color {
     type Error = String;
 
+    /// Converts [String] values to a [Color]. This will accept words or RGB representations. It is not case sensitive.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let lowered = value.to_lowercase();
 
@@ -191,12 +194,9 @@ impl TryFrom<String> for Color {
 }
 
 impl Default for Color {
+    /// Creates a new white Color. Same as [WHITE](Color::WHITE).
     fn default() -> Self {
-        return Self {
-            r: 255,
-            g: 255,
-            b: 255,
-        };
+        return Self::WHITE;
     }
 }
 
@@ -218,7 +218,10 @@ impl Serialize for Color {
     where
         S: serde::Serializer,
     {
-        return Serialize::serialize(&format!("{}, {}, {}", self.r, self.g, self.b), serializer);
+        return Serialize::serialize(
+            &format!("{}, {}, {}", self.red, self.green, self.blue),
+            serializer,
+        );
     }
 }
 
