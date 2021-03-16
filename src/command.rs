@@ -1,3 +1,4 @@
+/// Possible Commands that could be triggered by shortcuts
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Command {
     EnterSingleCharacterCommand,
@@ -19,7 +20,8 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn get_name(&self) -> &str {
+    /// Returns a string representation of each [Command]
+    pub const fn get_name(&self) -> &'static str {
         return match self {
             Self::EnterSingleCharacterCommand => "EnterSingleCharacter",
             Self::CloseSelectedPanelCommand => "CloseSelectedPanel",
@@ -40,6 +42,7 @@ impl Command {
         };
     }
 
+    /// The help text for a command.
     pub fn help_text(&self) -> Option<String> {
         return Some(match self {
             Self::CloseSelectedPanelCommand => "Close selected panel".to_string(),
@@ -65,6 +68,7 @@ impl Command {
         });
     }
 
+    /// The arguments supplied to a command.
     pub fn args(&self) -> Vec<String> {
         return match self {
             Command::FocusWorkspaceCommand(a) => vec![format!("{}", a)],
@@ -72,6 +76,10 @@ impl Command {
         };
     }
 
+    /// Try to create a new [Command] from the name and args.
+    ///
+    /// # Errors
+    /// Errors for unknown command or invalid number of arguments, both too few and too many arguments will cause errors.
     pub fn try_from_string(name: String, mut args: Vec<String>) -> Result<Self, String> {
         let lowered_name = name.to_lowercase();
 
